@@ -51,7 +51,49 @@ export class CarMaterialEnhancer {
       const mats = Array.isArray(child.material) ? child.material : [child.material];
 
       const upgradedMats = mats.map((mat) => {
-        if (!mat) return mat;
+        if (!mat) {
+          // If a mesh has no material assigned, provide a rich automotive body / trim physical material
+          const isWheel = meshName.includes('wheel') || meshName.includes('rim');
+          const isTire = meshName.includes('tire') || meshName.includes('tyre') || meshName.includes('rubber');
+          const isGlass = meshName.includes('glass') || meshName.includes('window') || meshName.includes('windshield');
+          if (isGlass) {
+            const gm = new THREE.MeshPhysicalMaterial({
+              color: new THREE.Color('#0f172a'),
+              roughness: 0.02,
+              metalness: 0.1,
+              transmission: 0.85,
+              transparent: true,
+              opacity: 0.35,
+              depthWrite: false,
+            });
+            this.glassMaterials.push(gm);
+            return gm;
+          }
+          if (isTire) {
+            return new THREE.MeshStandardMaterial({
+              color: new THREE.Color('#111318'),
+              roughness: 0.82,
+              metalness: 0.05,
+            });
+          }
+          if (isWheel) {
+            return new THREE.MeshStandardMaterial({
+              color: new THREE.Color('#94a3b8'),
+              metalness: 0.92,
+              roughness: 0.18,
+            });
+          }
+          const defaultBody = new THREE.MeshPhysicalMaterial({
+            color: new THREE.Color(this.currentPaintColor || '#1e293b'),
+            roughness: 0.16,
+            metalness: 0.85,
+            clearcoat: 0.85,
+            clearcoatRoughness: 0.08,
+            envMapIntensity: 2.2,
+          });
+          this.bodyMaterials.push(defaultBody);
+          return defaultBody;
+        }
         const matName = (mat.name || '').toLowerCase();
         const combined = `${meshName} ${matName}`;
 
@@ -89,16 +131,16 @@ export class CarMaterialEnhancer {
           combined.includes('lens')
         ) {
           const isRear = combined.includes('rear') || combined.includes('tail') || combined.includes('third');
-          const lightCol = isRear ? new THREE.Color('#ff0033') : new THREE.Color('#f8fafc');
+          const lightCol = isRear ? new THREE.Color('#d90429') : new THREE.Color('#f8fafc');
 
           const lightMat = new THREE.MeshStandardMaterial({
             color: lightCol,
             emissive: lightCol,
-            emissiveIntensity: 3.6,
-            roughness: 0.1,
-            metalness: 0.2,
+            emissiveIntensity: this.headlightsActive ? (isRear ? 0.75 : 0.85) : 0.0,
+            roughness: 0.2,
+            metalness: 0.1,
           });
-          this.lightMaterials.push({ mat: lightMat, isRear });
+          this.lightMaterials.push({ mat: lightMat, isRear, color: lightCol });
           return lightMat;
         }
 
@@ -199,8 +241,7 @@ export class CarMaterialEnhancer {
     // Create high-resolution soft contact shadow directly under wheels & chassis
     this.createContactShadow(rootGroup, bounds, mode);
 
-    // Create active forward headlight projectors & underglow
-    this.createHeadlightProjectors(rootGroup, bounds, mode);
+    // Create underglow lighting
     this.createUnderglow(rootGroup, bounds, mode);
   }
 
@@ -278,41 +319,15 @@ export class CarMaterialEnhancer {
    * Creates twin forward headlight spotlight cones casting light forward onto the pavement
    */
   createHeadlightProjectors(rootGroup, bounds, mode) {
+    // Delegated to VehicleDynamics for unified, correctly aligned automotive forward lighting
     if (this.headlightProjectors) {
       this.headlightProjectors.removeFromParent();
       this.headlightProjectors = null;
     }
-
-    if (mode === 'planes') return; // Planes use landing gear floodlights in VehicleDynamics
-
-    const group = new THREE.Group();
-    group.name = 'CarHeadlightProjectors';
-
-    const halfW = bounds.w * 0.38;
-    const yPos = Math.max(0.35, bounds.h * 0.32);
-    const zPos = bounds.d * 0.45;
-
-    [-halfW, halfW].forEach((xPos) => {
-      const spot = new THREE.SpotLight('#f8fafc', 4.5, 45, Math.PI / 5.5, 0.5, 1.2);
-      spot.position.set(xPos, yPos, zPos);
-      spot.castShadow = true;
-      spot.shadow.mapSize.set(1024, 1024);
-      spot.shadow.bias = -0.0005;
-
-      const target = new THREE.Object3D();
-      target.position.set(xPos * 0.4, 0, zPos + 18);
-      group.add(target);
-      spot.target = target;
-      group.add(spot);
-    });
-
-    this.headlightProjectors = group;
-    this.headlightProjectors.visible = this.headlightsActive;
-    rootGroup.add(group);
   }
 
   /**
-   * Creates cinematic neon chassis underglow
+   * Creates subtle, diffuse chassis underglow illumination (no harsh polygon boxes)
    */
   createUnderglow(rootGroup, bounds, mode) {
     if (this.underglowLight) {
@@ -320,39 +335,25 @@ export class CarMaterialEnhancer {
       this.underglowLight = null;
     }
 
-    if (mode === 'planes') return;
+    if (mode === 'planes' || mode === 'parts') return;
 
     const group = new THREE.Group();
     group.name = 'ChassisUnderglowGroup';
 
-    // 4 directional soft pointlights under front, back, left, right sills
+    // Soft downward pointlights with natural quadratic distance decay
     const col = new THREE.Color(this.underglowColor);
     const positions = [
-      [0, 0.15, bounds.d * 0.25],
-      [0, 0.15, -bounds.d * 0.25],
-      [bounds.w * 0.4, 0.15, 0],
-      [-bounds.w * 0.4, 0.15, 0],
+      [0, 0.12, bounds.d * 0.22],
+      [0, 0.12, -bounds.d * 0.22],
+      [bounds.w * 0.38, 0.12, 0],
+      [-bounds.w * 0.38, 0.12, 0],
     ];
 
     positions.forEach((pos) => {
-      const p = new THREE.PointLight(col, 2.8, 6.5, 2.0);
+      const p = new THREE.PointLight(col, 1.2, 3.2, 2.0);
       p.position.set(pos[0], pos[1], pos[2]);
       group.add(p);
     });
-
-    // Floor glow plane
-    const glowGeo = new THREE.PlaneGeometry(bounds.w * 1.3, bounds.d * 1.2);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: col,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-    glowMesh.rotation.x = -Math.PI / 2;
-    glowMesh.position.y = 0.004;
-    group.add(glowMesh);
 
     this.underglowLight = group;
     this.underglowLight.visible = this.underglowActive;
@@ -407,11 +408,8 @@ export class CarMaterialEnhancer {
 
   setHeadlights(enabled) {
     this.headlightsActive = enabled;
-    if (this.headlightProjectors) {
-      this.headlightProjectors.visible = enabled;
-    }
     this.lightMaterials.forEach(({ mat, isRear }) => {
-      mat.emissiveIntensity = enabled ? (isRear ? 3.6 : 4.0) : 0.2;
+      mat.emissiveIntensity = enabled ? (isRear ? 0.75 : 0.85) : 0.0;
     });
   }
 

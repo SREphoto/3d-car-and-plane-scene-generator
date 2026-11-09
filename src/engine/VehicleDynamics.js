@@ -30,9 +30,17 @@ export class VehicleDynamics {
     this.lightsRig = new THREE.Group();
     this.fxGroup.add(this.lightsRig);
 
-    // Front left & right headlight spotlights + flare sprites
-    this.headlightL = new THREE.SpotLight('#fffbeb', 6.5, 45, Math.PI / 5, 0.45, 1.2);
-    this.headlightR = new THREE.SpotLight('#fffbeb', 6.5, 45, Math.PI / 5, 0.45, 1.2);
+    // Front left & right automotive headlight spotlights
+    // Natural 5500K Xenon/LED projection onto the pavement with smooth penumbra
+    this.headlightL = new THREE.SpotLight('#f8fafc', 2.8, 38, Math.PI / 5.5, 0.65, 1.8);
+    this.headlightR = new THREE.SpotLight('#f8fafc', 2.8, 38, Math.PI / 5.5, 0.65, 1.8);
+    this.headlightL.castShadow = true;
+    this.headlightR.castShadow = true;
+    this.headlightL.shadow.mapSize.set(512, 512);
+    this.headlightR.shadow.mapSize.set(512, 512);
+    this.headlightL.shadow.bias = -0.0005;
+    this.headlightR.shadow.bias = -0.0005;
+
     this.headlightTargetL = new THREE.Object3D();
     this.headlightTargetR = new THREE.Object3D();
     this.lightsRig.add(
@@ -44,31 +52,23 @@ export class VehicleDynamics {
     this.headlightL.target = this.headlightTargetL;
     this.headlightR.target = this.headlightTargetR;
 
-    const flareGeo = new THREE.SphereGeometry(0.09, 12, 12);
-    const frontFlareMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
-    const rearFlareMat = new THREE.MeshBasicMaterial({ color: '#ff1e1e' });
-
-    this.flareFL = new THREE.Mesh(flareGeo, frontFlareMat);
-    this.flareFR = new THREE.Mesh(flareGeo, frontFlareMat);
-    this.flareRL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.06), rearFlareMat);
-    this.flareRR = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.06), rearFlareMat);
+    // Subtle rear taillight ground bounce illumination (soft ambient red glow on asphalt, no crude polygon boxes)
+    this.taillightL = new THREE.PointLight('#dc2626', 0.6, 3.2, 2.0);
+    this.taillightR = new THREE.PointLight('#dc2626', 0.6, 3.2, 2.0);
+    this.lightsRig.add(this.taillightL, this.taillightR);
 
     // Plane Wingtip Navigation Lights (Port Red, Starboard Green, Strobe White)
-    this.navPort = new THREE.PointLight('#ef4444', 4.0, 12);
-    this.navStarboard = new THREE.PointLight('#22c55e', 4.0, 12);
-    this.strobeTail = new THREE.PointLight('#ffffff', 8.0, 22);
+    this.navPort = new THREE.PointLight('#ef4444', 2.5, 8);
+    this.navStarboard = new THREE.PointLight('#22c55e', 2.5, 8);
+    this.strobeTail = new THREE.PointLight('#ffffff', 4.0, 14);
 
-    const navSphere = new THREE.SphereGeometry(0.16, 10, 10);
-    this.navPortMesh = new THREE.Mesh(navSphere, new THREE.MeshBasicMaterial({ color: '#ff2222' }));
-    this.navStarboardMesh = new THREE.Mesh(navSphere, new THREE.MeshBasicMaterial({ color: '#22ff55' }));
+    const navSphere = new THREE.SphereGeometry(0.08, 8, 8);
+    this.navPortMesh = new THREE.Mesh(navSphere, new THREE.MeshBasicMaterial({ color: '#ef4444' }));
+    this.navStarboardMesh = new THREE.Mesh(navSphere, new THREE.MeshBasicMaterial({ color: '#22c55e' }));
     this.strobeWingL = new THREE.Mesh(navSphere, new THREE.MeshBasicMaterial({ color: '#ffffff' }));
     this.strobeWingR = new THREE.Mesh(navSphere, new THREE.MeshBasicMaterial({ color: '#ffffff' }));
 
     this.lightsRig.add(
-      this.flareFL,
-      this.flareFR,
-      this.flareRL,
-      this.flareRR,
       this.navPort,
       this.navStarboard,
       this.strobeTail,
@@ -181,13 +181,12 @@ export class VehicleDynamics {
     // Position headlights & taillights relative to normalized subject bounds
     this.headlightL.position.set(halfW, lightY, frontZ);
     this.headlightR.position.set(-halfW, lightY, frontZ);
-    this.headlightTargetL.position.set(halfW * 1.1, 0.1, frontZ - 18);
-    this.headlightTargetR.position.set(-halfW * 1.1, 0.1, frontZ - 18);
+    this.headlightTargetL.position.set(halfW * 1.05, 0.05, frontZ - 20);
+    this.headlightTargetR.position.set(-halfW * 1.05, 0.05, frontZ - 20);
 
-    this.flareFL.position.set(halfW, lightY, frontZ - 0.04);
-    this.flareFR.position.set(-halfW, lightY, frontZ - 0.04);
-    this.flareRL.position.set(halfW * 0.95, lightY * 1.08, rearZ + 0.04);
-    this.flareRR.position.set(-halfW * 0.95, lightY * 1.08, rearZ + 0.04);
+    // Position soft taillight ground bounce
+    this.taillightL.position.set(halfW * 0.85, Math.max(0.2, lightY * 0.7), rearZ + 0.35);
+    this.taillightR.position.set(-halfW * 0.85, Math.max(0.2, lightY * 0.7), rearZ + 0.35);
 
     // Position Plane wingtip navigation lights
     const wingTipX = w * 0.49;
@@ -237,13 +236,11 @@ export class VehicleDynamics {
     const s = this.state;
     const isPlane = this.currentMode === 'planes';
 
-    // 1. Headlights & Plane Navigation Strobes visibility
+    // 1. Headlights & Taillights visibility
     this.headlightL.visible = s.headlightsOn;
     this.headlightR.visible = s.headlightsOn;
-    this.flareFL.visible = s.headlightsOn;
-    this.flareFR.visible = s.headlightsOn;
-    this.flareRL.visible = s.headlightsOn && !isPlane;
-    this.flareRR.visible = s.headlightsOn && !isPlane;
+    this.taillightL.visible = s.headlightsOn && !isPlane;
+    this.taillightR.visible = s.headlightsOn && !isPlane;
 
     const showPlaneLights = isPlane && s.planeStrobes;
     this.navPort.visible = showPlaneLights;
@@ -284,12 +281,8 @@ export class VehicleDynamics {
       }
     }
 
-    // 4. Aero Wind Tunnel Streamlines
-    const showAero = s.aeroStreamlines || activeSceneId === 'wind_tunnel';
-    this.streamlinesGroup.visible = showAero;
-    if (showAero) {
-      this.rebuildStreamlineCurves(elapsed);
-    }
+    // 4. Aero Wind Tunnel Streamlines (permanently disabled)
+    this.streamlinesGroup.visible = false;
 
     // 5. Plane Jet Engine & Wingtip Contrails
     const showContrails = isPlane && s.planeContrails;

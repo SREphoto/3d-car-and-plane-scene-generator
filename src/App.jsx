@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { SceneManager } from './engine/SceneManager';
 import { MusicEngine } from './audio/MusicEngine';
 import { VideoExporter, ASPECT_RATIOS } from './recorder/VideoExporter';
-import { CARS_CATALOG, PLANES_CATALOG, SCENES_CATALOG, MUSIC_CATALOG } from './data/catalog';
+import { CARS_CATALOG, PLANES_CATALOG, PARTS_CATALOG, SCENES_CATALOG, MUSIC_CATALOG } from './data/catalog';
 import { TopBar } from './components/TopBar';
 import { ModelBrowserDrawer } from './components/ModelBrowserDrawer';
 import { StudioControlsDrawer } from './components/StudioControlsDrawer';
@@ -43,25 +43,26 @@ export default function App() {
   // Lighting & Dynamics
   const [lightingState, setLightingState] = useState({
     keyColor: '#ffffff',
-    keyIntensity: 3.2,
+    keyIntensity: 1.8,
     keyAzimuth: 42,
     keyElevation: 48,
     fillColor: '#60a5fa',
-    fillIntensity: 1.4,
+    fillIntensity: 0.6,
     rimColor: '#f8fafc',
-    rimIntensity: 2.4,
+    rimIntensity: 1.4,
     ambientColor: '#1e293b',
-    ambientIntensity: 1.1,
-    exposure: 1.15,
+    ambientIntensity: 0.6,
+    exposure: 1.0,
     floorWetness: 0.55,
-    fogDensity: 0.0035,
-    lightSweep: true,
+    fogDensity: 0.003,
+    lightSweep: false,
+    softboxIntensity: 2.5,
   });
 
   const [dynamicsState, setDynamicsState] = useState({
     headlightsOn: true,
     wheelSpin: true,
-    aeroStreamlines: true,
+    aeroStreamlines: false,
     planeBanking: true,
     planeContrails: true,
     planeStrobes: true,
@@ -70,13 +71,13 @@ export default function App() {
   // Car Paint & Shading Customizer
   const [paintColor, setPaintColor] = useState('#b91c1c');
   const [paintFinish, setPaintFinish] = useState('metallic');
-  const [underglowOn, setUnderglowOn] = useState(true);
+  const [underglowOn, setUnderglowOn] = useState(false);
   const [underglowColor, setUnderglowColor] = useState('#00f5d4');
   const [postFx, setPostFx] = useState({
-    bloom: 0.82,
-    vignette: 0.45,
-    contrast: 1.22,
-    blackLevel: 0.04,
+    bloom: 0.16,
+    vignette: 0.3,
+    contrast: 1.08,
+    blackLevel: 0.01,
   });
 
   // Cinematography & Reel Sequencer
@@ -168,11 +169,16 @@ export default function App() {
   // Handle Mode Switch
   const handleModeChange = (newMode) => {
     setMode(newMode);
-    const firstSubject = newMode === 'cars' ? CARS_CATALOG[0] : PLANES_CATALOG[0];
+    const catalog =
+      newMode === 'cars'
+        ? CARS_CATALOG
+        : newMode === 'planes'
+        ? PLANES_CATALOG
+        : PARTS_CATALOG;
+    const firstSubject = catalog[0];
     setActiveSubject(firstSubject);
-    if (sceneManagerRef.current) {
+    if (sceneManagerRef.current && firstSubject) {
       sceneManagerRef.current.loadSubject(firstSubject, newMode);
-      // If switching to planes in outdoor scene, elevate camera target nicely
       sceneManagerRef.current.cameraDirector.resetToHeroIso();
     }
   };

@@ -128,7 +128,7 @@ export class SceneManager {
 
         const rawModel = gltf.scene;
 
-        // Strip any stray backdrop/shadow-catcher floor planes baked into Sketchfab exports
+        // Strip any stray backdrop/shadow-catcher floor planes, collision hulls, or hitboxes baked into Sketchfab exports
         rawModel.traverse((child) => {
           if (child.isMesh) {
             const mName = (child.name || '').toLowerCase();
@@ -137,14 +137,56 @@ export class SceneManager {
               mName.includes('ground_ao') ||
               matName.includes('ground_ao') ||
               mName.includes('shadow_plane') ||
-              mName.includes('floor_plane')
+              mName.includes('floor_plane') ||
+              mName.includes('convcolonly') ||
+              mName.includes('collision') ||
+              mName.includes('hitbox') ||
+              mName.includes('bounding') ||
+              mName.includes('ucx_') ||
+              mName.includes('ubx_')
             ) {
               child.visible = false;
             }
           }
         });
 
-        // Compute bounding box of visible meshes
+        // 2. Orientation normalization
+        if (item.modelRotation) {
+          if (item.rotationOrder) rawModel.rotation.order = item.rotationOrder;
+          rawModel.rotation.set(
+            item.modelRotation[0] || 0,
+            item.modelRotation[1] || 0,
+            item.modelRotation[2] || 0
+          );
+          rawModel.updateMatrixWorld(true);
+        } else if (mode === 'cars') {
+          // Automatic automotive orientation normalization:
+          // A car's length is ALWAYS its longest axis, height is ALWAYS its shortest axis.
+          const testBox = new THREE.Box3().setFromObject(rawModel);
+          const testSize = new THREE.Vector3();
+          testBox.getSize(testSize);
+
+          if (testSize.y > testSize.z * 1.25 && testSize.y > testSize.x * 1.25) {
+            // Model was exported standing vertically on its nose (length along Y)
+            rawModel.rotation.x = -Math.PI / 2;
+            rawModel.updateMatrixWorld(true);
+          } else if (testSize.x > testSize.z * 1.25 && testSize.x > testSize.y * 1.25) {
+            // Model was exported 90 deg sideways (length along X)
+            rawModel.rotation.y = Math.PI / 2;
+            rawModel.updateMatrixWorld(true);
+          }
+        } else if (mode === 'planes') {
+          const testBox = new THREE.Box3().setFromObject(rawModel);
+          const testSize = new THREE.Vector3();
+          testBox.getSize(testSize);
+          if (testSize.x > testSize.z * 1.35) {
+            // Fuselage along X, rotate 90 deg on Y so nose points along -Z
+            rawModel.rotation.y = Math.PI / 2;
+            rawModel.updateMatrixWorld(true);
+          }
+        }
+
+        // Compute bounding box of visible meshes after orientation correction
         const box = new THREE.Box3().setFromObject(rawModel);
         const size = new THREE.Vector3();
         const center = new THREE.Vector3();
@@ -251,9 +293,8 @@ export class SceneManager {
 
           const rawLoc = gltf.scene;
 
-          // For the Wind Tunnel:
+          // Location specific alignment and material calibrations:
           if (sceneItem.id === 'wind_tunnel') {
-            // Find rotating fan blade
             rawLoc.traverse((child) => {
               if (child.name === 'Elice') {
                 this.windTunnelFan = child;
@@ -268,10 +309,66 @@ export class SceneManager {
             });
 
             // The turntable floor 'Sol' in Blender is ALREADY at Y = 0.000!
-            // We scale the tunnel chamber cleanly around the car without shifting Y
             locGroup = new THREE.Group();
             rawLoc.scale.setScalar(0.42);
             rawLoc.position.set(0, 0, 0);
+            locGroup.add(rawLoc);
+            this.locationCache.set(sceneItem.id, locGroup);
+          } else if (sceneItem.id === 'interior_7') {
+            // Architectural Loft Hall: Floor-to-ceiling glass wall at X = -3.32 with city skyline outside
+            rawLoc.traverse((child) => {
+              if (child.isMesh) {
+                child.receiveShadow = true;
+                child.castShadow = true;
+                if (child.material) {
+                  child.material.envMapIntensity = 1.8;
+                  const mName = (child.name || '').toLowerCase();
+                  const matName = (child.material?.name || '').toLowerCase();
+                  // Polished architectural concrete/wood floor
+                  if (mName === 'plane' || matName.includes('material.001')) {
+                    child.material.roughness = 0.18;
+                    child.material.metalness = 0.20;
+                    child.material.envMapIntensity = 2.4;
+                  }
+                  // Crystal clear optical glass windows looking out at city buildings
+                  if (mName.includes('plane.004') || matName.includes('material.029')) {
+                    child.material.transparent = true;
+                    child.material.opacity = 0.26;
+                    child.material.roughness = 0.03;
+                    child.material.metalness = 0.1;
+                    child.material.depthWrite = false;
+                  }
+                }
+              }
+            });
+            locGroup = new THREE.Group();
+            rawLoc.scale.setScalar(1.0);
+            // In interior_7, floor Plane is level at Y = 0.000, centered at (0.72, 0, 0.18).
+            // Shifting by (-0.72, 0, -0.18) centers the loft showcase floor directly at (0,0,0)
+            // with vehicle wheels resting at Y = 0.000, glass wall at X = -3.32, and skyline towering outside!
+            rawLoc.position.set(-0.72, 0.0, -0.18);
+            locGroup.add(rawLoc);
+            this.locationCache.set(sceneItem.id, locGroup);
+          } else if (sceneItem.id === 'car_garage') {
+            // Underground Performance Garage
+            rawLoc.traverse((child) => {
+              if (child.isMesh) {
+                child.receiveShadow = true;
+                child.castShadow = true;
+                if (child.material) {
+                  child.material.envMapIntensity = 1.3;
+                  if (child.name === 'Cube_3') {
+                    child.material.roughness = 0.52;
+                    child.material.metalness = 0.1;
+                  }
+                }
+              }
+            });
+            locGroup = new THREE.Group();
+            rawLoc.scale.setScalar(1.0);
+            // Concrete floor slab Cube_3 top surface is at Y = 0.870.
+            // Shifting Y by -0.870 aligns top of concrete floor slab perfectly to Y = 0.000 (no car clipping!)
+            rawLoc.position.set(1.189, -0.870, 0.0);
             locGroup.add(rawLoc);
             this.locationCache.set(sceneItem.id, locGroup);
           } else {
@@ -280,7 +377,7 @@ export class SceneManager {
                 child.receiveShadow = true;
                 child.castShadow = true;
                 if (child.material) {
-                  child.material.envMapIntensity = 1.6;
+                  child.material.envMapIntensity = 1.0;
                 }
               }
             });
@@ -310,6 +407,7 @@ export class SceneManager {
 
         if (this.activeSceneId === sceneItem.id) {
           this.locationHolder.add(locGroup);
+          this.cameraDirector.setSceneId(sceneItem.id);
           // If wind tunnel, bind fan
           if (sceneItem.id === 'wind_tunnel') {
             locGroup.traverse((child) => {
@@ -371,9 +469,9 @@ export class SceneManager {
       }
     }
 
-    // 2. Rotate Wind Tunnel Fan if in Wind Tunnel scene
+    // 2. Rotate Wind Tunnel Fan if in Wind Tunnel scene (aerodynamically correct rotation)
     if (this.activeSceneId === 'wind_tunnel' && this.windTunnelFan) {
-      this.windTunnelFan.rotation.y += dt * 18.0;
+      this.windTunnelFan.rotation.y -= dt * 18.0;
     }
 
     // 3. Update Outdoor Weather & 24h Time-of-Day

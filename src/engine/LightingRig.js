@@ -12,24 +12,24 @@ export class LightingRig {
     const studioEnvScene = createAutomotiveStudioScene();
     this.envTexture = pmremGenerator.fromScene(studioEnvScene, 0.04).texture;
     this.scene.environment = this.envTexture;
-    this.scene.environmentIntensity = 2.2;
+    this.scene.environmentIntensity = 0.85;
 
     this.state = {
       keyColor: '#ffffff',
-      keyIntensity: 3.8,
+      keyIntensity: 1.8,
       keyAzimuth: 45,
-      keyElevation: 52,
+      keyElevation: 48,
       fillColor: '#93c5fd',
-      fillIntensity: 1.6,
+      fillIntensity: 0.7,
       rimColor: '#f8fafc',
-      rimIntensity: 3.2,
+      rimIntensity: 1.4,
       ambientColor: '#0a0f1d',
-      ambientIntensity: 0.45, // Dropped down from 1.1 so dark scenes are truly deep & moody
-      exposure: 1.15,
-      floorWetness: 0.75, // Default wet mirror floor
-      fogDensity: 0.005,
-      lightSweep: true,
-      softboxIntensity: 4.5,
+      ambientIntensity: 0.55,
+      exposure: 1.0,
+      floorWetness: 0.65,
+      fogDensity: 0.003,
+      lightSweep: false,
+      softboxIntensity: 2.5,
       blackoutMode: false,
     };
 
@@ -46,11 +46,11 @@ export class LightingRig {
   }
 
   _initLights() {
-    this.ambientLight = new THREE.HemisphereLight('#ffffff', '#030712', 0.45);
+    this.ambientLight = new THREE.HemisphereLight('#ffffff', '#0a0f1d', 0.55);
     this.lightsGroup.add(this.ambientLight);
 
-    // Primary Key Spotlight
-    this.keyLight = new THREE.DirectionalLight('#ffffff', 3.8);
+    // Primary Key Directional Light
+    this.keyLight = new THREE.DirectionalLight('#ffffff', 1.8);
     this.keyLight.castShadow = true;
     this.keyLight.shadow.mapSize.set(2048, 2048);
     this.keyLight.shadow.camera.near = 1;
@@ -63,22 +63,22 @@ export class LightingRig {
     this.keyLight.shadow.bias = -0.0004;
     this.lightsGroup.add(this.keyLight);
 
-    // Secondary Fill Light
-    this.fillLight = new THREE.DirectionalLight('#93c5fd', 1.6);
+    // Secondary Fill Light (Soft bounce)
+    this.fillLight = new THREE.DirectionalLight('#93c5fd', 0.7);
     this.fillLight.position.set(-18, 12, -12);
     this.lightsGroup.add(this.fillLight);
 
-    // Sharp Razor Rim Spotlight
-    this.rimLight = new THREE.SpotLight('#f8fafc', 3.5, 95, Math.PI / 3.2, 0.45, 1.0);
+    // Balanced Silhouette Rim Spotlight
+    this.rimLight = new THREE.SpotLight('#f8fafc', 1.4, 95, Math.PI / 3.5, 0.55, 1.2);
     this.rimLight.position.set(0, 14, 22);
     this.lightsGroup.add(this.rimLight);
 
-    // Moving overhead sweep softbox light for cinematic clearcoat highlights
-    this.sweepLight = new THREE.PointLight('#ffffff', 2.8, 40, 1.6);
+    // Subtle overhead sweep softbox light
+    this.sweepLight = new THREE.PointLight('#ffffff', 0.5, 30, 2.0);
     this.sweepLight.position.set(0, 7.5, 0);
     this.lightsGroup.add(this.sweepLight);
 
-    this.scene.fog = new THREE.FogExp2('#03060c', 0.005);
+    this.scene.fog = new THREE.FogExp2('#03060c', 0.003);
   }
 
   _initProceduralStudios() {
@@ -297,24 +297,43 @@ export class LightingRig {
   }
 
   setActiveProceduralScene(sceneId) {
+    this.currentSceneId = sceneId;
     this.wetStudioGroup.visible = sceneId === 'wet_studio' || sceneId === 'dark_void';
     this.cyberTunnelGroup.visible = sceneId === 'cyberpunk_tunnel';
     this.cloudDeckGroup.visible = sceneId === 'cloud_deck';
     this.runwayGroup.visible = sceneId === 'night_runway';
-    this.windTunnelGroup.visible = sceneId === 'wind_tunnel';
+    this.windTunnelGroup.visible = false; // Wind tunnel streamlines permanently disabled
 
-    if (sceneId === 'dark_void') {
+    if (sceneId === 'interior_7') {
+      // Natural architectural loft lighting with city skyline background
+      const skyCol = new THREE.Color('#384556');
+      this.scene.background = skyCol;
+      if (this.scene.fog) {
+        this.scene.fog.color.copy(skyCol);
+        this.scene.fog.density = 0.0004; // Crystal clear sightline to city buildings outside!
+      }
+      this.ambientLight.intensity = 1.05;
+      this.keyLight.intensity = 3.2;
+      this.keyLight.position.set(-16.0, 12.0, 4.0); // Natural sunlight streaming through glass from -X
+    } else if (sceneId === 'dark_void') {
       this.scene.background = new THREE.Color('#010204');
       this.scene.fog.color.set('#010204');
       this.scene.fog.density = 0.008;
       this.ambientLight.intensity = 0.15; // Inky black void
       this.keyLight.intensity = 4.2;
       this.rimLight.intensity = 4.5;
+    } else if (sceneId === 'car_garage') {
+      this.scene.background = new THREE.Color('#05070d');
+      this.scene.fog.color.set('#05070d');
+      this.scene.fog.density = 0.003;
+      this.ambientLight.intensity = 0.55;
+      this.keyLight.intensity = 2.4;
+      this.keyLight.position.set(0, 4.2, 0); // Overhead fluorescent bay
     } else if (sceneId === 'wind_tunnel') {
       this.scene.background = new THREE.Color('#020409');
       this.scene.fog.color.set('#040813');
-      this.scene.fog.density = 0.006;
-      this.ambientLight.intensity = 0.35;
+      this.scene.fog.density = 0.005;
+      this.ambientLight.intensity = 0.45;
       this.keyLight.intensity = 3.6;
     } else if (sceneId === 'cloud_deck') {
       this.scene.background = new THREE.Color('#0c4a6e');
@@ -362,9 +381,42 @@ export class LightingRig {
     this.rimLight.color.set(s.rimColor);
     this.rimLight.intensity = s.rimIntensity;
 
+    // Synchronize IBL environment reflections and background brightness directly with ambient intensity
+    const ambientVal = s.blackoutMode ? 0.04 : Math.max(0.02, s.ambientIntensity);
     this.ambientLight.color.set('#ffffff');
     this.ambientLight.groundColor.set(s.ambientColor);
-    this.ambientLight.intensity = s.blackoutMode ? 0.05 : s.ambientIntensity;
+    this.ambientLight.intensity = ambientVal;
+
+    this.scene.environmentIntensity = THREE.MathUtils.clamp(ambientVal * 1.5, 0.05, 3.0);
+    if (this.scene.backgroundIntensity !== undefined) {
+      this.scene.backgroundIntensity = THREE.MathUtils.clamp(ambientVal * 1.2, 0.04, 2.0);
+    }
+
+    if (this.currentSceneId === 'interior_7') {
+      // Architectural skyline ambient & sky luminance
+      // Scales with ambientVal so user slider smoothly darkens/lightens the entire loft and skyline!
+      const skyBase = new THREE.Color('#384556');
+      const skyFactor = THREE.MathUtils.clamp(ambientVal * 1.3, 0.02, 2.5);
+      skyBase.multiplyScalar(skyFactor);
+      this.scene.background = skyBase;
+      if (this.scene.fog) {
+        this.scene.fog.color.copy(skyBase);
+        this.scene.fog.density = 0.0004;
+      }
+      this.ambientLight.color.set('#f8fafc');
+      this.ambientLight.groundColor.set('#475569');
+      this.ambientLight.intensity = Math.max(0.15, ambientVal * 1.3);
+      this.keyLight.color.set('#fffbeb');
+      this.keyLight.position.set(-16.0, 12.0, 4.0);
+    } else if (this.currentSceneId !== 'outdoor_world') {
+      const baseCol = new THREE.Color(s.ambientColor || '#0a0f1d');
+      const bgLum = s.blackoutMode ? 0.08 : Math.max(0.06, ambientVal * 0.45);
+      baseCol.multiplyScalar(bgLum);
+      this.scene.background = baseCol;
+      if (this.scene.fog) {
+        this.scene.fog.color.copy(baseCol);
+      }
+    }
 
     this.renderer.toneMappingExposure = s.exposure;
 
@@ -373,7 +425,7 @@ export class LightingRig {
     }
 
     if (this.softboxMat) {
-      const bri = s.softboxIntensity || 4.5;
+      const bri = s.softboxIntensity || 2.5;
       this.softboxMat.color.setRGB(bri, bri, bri);
     }
 
@@ -400,17 +452,17 @@ export class LightingRig {
   }
 
   update(dt, elapsed, speedActive = true) {
-    // 1. Studio overhead light sweep
+    // 1. Studio overhead light sweep (gentle fill)
     if (this.state.lightSweep) {
-      this.sweepLight.position.z = Math.sin(elapsed * 1.1) * 9.0;
-      this.sweepLight.position.x = Math.cos(elapsed * 0.7) * 3.5;
-      this.sweepLight.intensity = 2.4 + this.beatPulse * 2.8;
+      this.sweepLight.position.z = Math.sin(elapsed * 0.8) * 6.0;
+      this.sweepLight.position.x = Math.cos(elapsed * 0.5) * 2.5;
+      this.sweepLight.intensity = 0.5 + this.beatPulse * 0.5;
     } else {
       this.sweepLight.intensity = 0;
     }
 
-    // 2. Beat-sync pulse on rim light & studio neon bars
-    this.rimLight.intensity = this.state.rimIntensity + this.beatPulse * 3.0;
+    // 2. Beat-sync pulse on rim light
+    this.rimLight.intensity = this.state.rimIntensity + this.beatPulse * 0.6;
 
     // 3. Update aerodynamic streamlines in Wind Tunnel
     if (this.windTunnelGroup.visible) {

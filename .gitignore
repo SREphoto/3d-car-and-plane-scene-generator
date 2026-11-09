@@ -12,16 +12,25 @@ Thumbs.db
 3D Car and Plane Scene Creator/**/source/*.blend
 3D Car and Plane Scene Creator/**/source/*.fbx
 3D Car and Plane Scene Creator/3d/
-3D Car and Plane Scene Creator/Cars/**/*.png
-3D Car and Plane Scene Creator/Cars/**/*.jpeg
-3D Car and Plane Scene Creator/Cars/**/*.jpg
-3D Car and Plane Scene Creator/Cars/**/*.obj
-3D Car and Plane Scene Creator/Cars/**/*.mtl
-3D Car and Plane Scene Creator/Cars/**/*.txt
-3D Car and Plane Scene Creator/Cars/**/*.json
-3D Car and Plane Scene Creator/Planes/**/*.jpeg
-3D Car and Plane Scene Creator/Locations/**/*.jpeg
-3D Car and Plane Scene Creator/Locations/**/*.jpg
+3D Car and Plane Scene Creator/**/*.png
+3D Car and Plane Scene Creator/**/*.jpeg
+3D Car and Plane Scene Creator/**/*.jpg
+3D Car and Plane Scene Creator/**/*.obj
+3D Car and Plane Scene Creator/**/*.mtl
+3D Car and Plane Scene Creator/**/*.txt
+3D Car and Plane Scene Creator/**/*.json
+3D Car and Plane Scene Creator/**/*.blend
+3D Car and Plane Scene Creator/**/*.zip
+
 
 # Dist is ignored on main, committed on gh-pages
 dist/
+
+# Test and agent scratch
+.agents/
+.vite/
+tmp/
+screenshot.png
+scripts/__pycache__/
+tests/fixtures/
+

@@ -8,11 +8,11 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 const CinematicGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
-    uContrast: { value: 1.22 },
-    uExposure: { value: 1.05 },
-    uBlackLevel: { value: 0.04 },
-    uVignette: { value: 0.45 },
-    uGrain: { value: 0.018 },
+    uContrast: { value: 1.08 },
+    uExposure: { value: 1.0 },
+    uBlackLevel: { value: 0.01 },
+    uVignette: { value: 0.3 },
+    uGrain: { value: 0.008 },
     uTime: { value: 0.0 },
   },
   vertexShader: `
@@ -41,7 +41,7 @@ const CinematicGradeShader = {
       vec4 tex = texture2D(tDiffuse, vUv);
       vec3 col = tex.rgb * uExposure;
 
-      // Crush blacks slightly to ensure dark scenes have inky depth
+      // Gentle black level baseline
       col = max(vec3(0.0), col - vec3(uBlackLevel));
 
       // S-curve contrast adjustment
@@ -57,7 +57,7 @@ const CinematicGradeShader = {
       if (uVignette > 0.01) {
         vec2 uvCenter = (vUv - 0.5) * vec2(1.2, 1.0);
         float dist = dot(uvCenter, uvCenter);
-        float vig = 1.0 - smoothstep(0.18, 0.78, dist) * uVignette;
+        float vig = 1.0 - smoothstep(0.25, 0.85, dist) * uVignette;
         col *= vig;
       }
 
@@ -78,12 +78,12 @@ export class PostProcessingPipeline {
     this.renderPass = new RenderPass(scene, camera);
     this.composer.addPass(this.renderPass);
 
-    // Unreal Bloom: gives headlights, softbox reflections, and glowing neons an anamorphic lens glow
+    // Subtle, high-end bloom: threshold >= 1.08 ensures only real emissive/light sources bloom, never walls or paint
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size.x, size.y),
-      0.72, // Strength
-      0.38, // Radius
-      0.82  // Threshold
+      0.12, // Strength (clean, tight, cinematic bloom - NOT a blinding fog)
+      0.18, // Radius (tight, crisp lens glow)
+      1.08  // Threshold (strictly HDR emissives > 1.08 bloom)
     );
     this.composer.addPass(this.bloomPass);
 
@@ -103,7 +103,7 @@ export class PostProcessingPipeline {
     this.bloomPass.resolution.set(width, height);
   }
 
-  setBloom(strength, radius = 0.38, threshold = 0.82) {
+  setBloom(strength, radius = 0.22, threshold = 1.05) {
     this.bloomPass.strength = strength;
     this.bloomPass.radius = radius;
     this.bloomPass.threshold = threshold;

@@ -10,6 +10,7 @@ export class CameraDirector {
     this.baseFov = 42;
     this.bounds = { w: 2.2, h: 1.4, d: 4.8 };
     this.subjectYOffset = 0;
+    this.sceneId = 'interior_7';
 
     // Multi-shot sequence state
     this.isPlayingSequence = false;
@@ -27,6 +28,13 @@ export class CameraDirector {
     this.onShotChangeCallback = null;
   }
 
+  setSceneId(sceneId) {
+    this.sceneId = sceneId;
+    if (this.activeShotId === 'free_orbit') {
+      this.resetToHeroIso();
+    }
+  }
+
   setBounds(bounds, mode = 'cars') {
     this.bounds = bounds || { w: 2.2, h: 1.4, d: 4.8 };
     this.mode = mode;
@@ -42,9 +50,15 @@ export class CameraDirector {
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
 
-    // Standard 3/4 front-right isometric hero view per spatial-coordinates-and-targets
-    this.camera.position.set(-span * 1.15, h * 1.15 + this.subjectYOffset, -span * 1.35);
-    this.controls.target.set(0, hMid, 0);
+    if (this.sceneId === 'interior_7') {
+      // Place camera inside architectural loft (+X) looking across car towards glass windows & city skyline (-X)
+      this.camera.position.set(span * 0.68, Math.max(1.15, h * 0.95) + this.subjectYOffset, -span * 0.52);
+      this.controls.target.set(0, hMid, -d * 0.08);
+    } else {
+      // Standard 3/4 front-right isometric hero view
+      this.camera.position.set(-span * 1.05, h * 1.1 + this.subjectYOffset, -span * 1.25);
+      this.controls.target.set(0, hMid, 0);
+    }
     this.controls.update();
   }
 

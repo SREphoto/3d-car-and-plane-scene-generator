@@ -76,7 +76,7 @@ export function StudioControlsDrawer({
   underglowColor = '#00f5d4',
   onChangeUnderglowColor,
   // Post-FX
-  postFx = { bloom: 0.82, vignette: 0.45, contrast: 1.22, blackLevel: 0.04 },
+  postFx = { bloom: 0.16, vignette: 0.3, contrast: 1.08, blackLevel: 0.01 },
   onChangePostFx,
   // Camera & Sequencer
   activeShotId,
@@ -358,15 +358,15 @@ export function StudioControlsDrawer({
                 >
                   <span>Anamorphic Bloom Glow</span>
                   <span style={{ fontFamily: 'var(--font-mono)' }}>
-                    {Math.round((postFx.bloom || 0.8) * 100)}%
+                    {Math.round(((postFx.bloom ?? 0.16) / 0.8) * 100)}%
                   </span>
                 </div>
                 <input
                   type="range"
                   min="0"
-                  max="2.2"
-                  step="0.05"
-                  value={postFx.bloom || 0.82}
+                  max="0.8"
+                  step="0.02"
+                  value={postFx.bloom ?? 0.16}
                   onChange={(e) =>
                     onChangePostFx({ ...postFx, bloom: parseFloat(e.target.value) })
                   }
@@ -511,19 +511,19 @@ export function StudioControlsDrawer({
                     marginBottom: '4px',
                   }}
                 >
-                  <span>Overhead Softbox Intensity</span>
+                  <span>Master Scene Exposure (Brightness)</span>
                   <span style={{ fontFamily: 'var(--font-mono)' }}>
-                    {lightingState.softboxIntensity || 4.5}
+                    {(lightingState.exposure ?? 1.0).toFixed(2)}x
                   </span>
                 </div>
                 <input
                   type="range"
-                  min="0.5"
-                  max="9.0"
-                  step="0.2"
-                  value={lightingState.softboxIntensity || 4.5}
+                  min="0.2"
+                  max="2.5"
+                  step="0.05"
+                  value={lightingState.exposure ?? 1.0}
                   onChange={(e) =>
-                    onChangeLightingState({ softboxIntensity: parseFloat(e.target.value) })
+                    onChangeLightingState({ exposure: parseFloat(e.target.value) })
                   }
                 />
               </div>
@@ -538,19 +538,46 @@ export function StudioControlsDrawer({
                     marginBottom: '4px',
                   }}
                 >
-                  <span>Ambient Darkness (Black Level)</span>
+                  <span>Surrounding Scene Lighting (Ambient & IBL)</span>
                   <span style={{ fontFamily: 'var(--font-mono)' }}>
-                    {lightingState.ambientIntensity}
+                    {(lightingState.ambientIntensity ?? 0.6).toFixed(2)}
                   </span>
                 </div>
                 <input
                   type="range"
                   min="0.0"
-                  max="1.2"
+                  max="2.0"
                   step="0.05"
-                  value={lightingState.ambientIntensity}
+                  value={lightingState.ambientIntensity ?? 0.6}
                   onChange={(e) =>
                     onChangeLightingState({ ambientIntensity: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Overhead Softbox Intensity</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {lightingState.softboxIntensity || 2.5}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.2"
+                  max="6.0"
+                  step="0.2"
+                  value={lightingState.softboxIntensity || 2.5}
+                  onChange={(e) =>
+                    onChangeLightingState({ softboxIntensity: parseFloat(e.target.value) })
                   }
                 />
               </div>
@@ -676,8 +703,8 @@ export function StudioControlsDrawer({
                 </div>
                 <input
                   type="range"
-                  min="0.5"
-                  max="8.0"
+                  min="0.2"
+                  max="4.5"
                   step="0.1"
                   value={lightingState.keyIntensity}
                   onChange={(e) =>

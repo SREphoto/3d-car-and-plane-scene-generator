@@ -12,7 +12,7 @@ import {
   Layers,
   X
 } from 'lucide-react';
-import { CARS_CATALOG, PLANES_CATALOG, SCENES_CATALOG } from '../data/catalog';
+import { CARS_CATALOG, PLANES_CATALOG, PARTS_CATALOG, SCENES_CATALOG } from '../data/catalog';
 
 export function ModelBrowserDrawer({
   isOpen,
@@ -28,18 +28,23 @@ export function ModelBrowserDrawer({
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
 
-  const modelsList = mode === 'cars' ? CARS_CATALOG : PLANES_CATALOG;
+  const modelsList =
+    mode === 'cars'
+      ? CARS_CATALOG
+      : mode === 'planes'
+      ? PLANES_CATALOG
+      : PARTS_CATALOG;
 
-  // Extract unique categories for cars
-  const categories = ['ALL', ...new Set(CARS_CATALOG.map((c) => c.category))];
+  // Extract unique categories for current mode
+  const categories = ['ALL', ...new Set(modelsList.map((c) => c.category).filter(Boolean))];
 
   const filteredModels = modelsList.filter((m) => {
     const matchesSearch =
       m.name.toLowerCase().includes(search.toLowerCase()) ||
-      m.brand.toLowerCase().includes(search.toLowerCase()) ||
+      (m.brand && m.brand.toLowerCase().includes(search.toLowerCase())) ||
       (m.specs && m.specs.toLowerCase().includes(search.toLowerCase()));
     const matchesCategory =
-      mode === 'planes' || categoryFilter === 'ALL' || m.category === categoryFilter;
+      categoryFilter === 'ALL' || m.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
@@ -86,8 +91,8 @@ export function ModelBrowserDrawer({
                 cursor: 'pointer',
               }}
             >
-              {mode === 'cars' ? <Car size={14} /> : <Plane size={14} />}
-              <span>{mode === 'cars' ? 'CARS (16)' : 'PLANES (2)'}</span>
+              {mode === 'cars' ? <Car size={14} /> : mode === 'planes' ? <Plane size={14} /> : <Layers size={14} />}
+              <span>{mode === 'cars' ? `CARS (${CARS_CATALOG.length})` : mode === 'planes' ? `PLANES (${PLANES_CATALOG.length})` : `PARTS (${PARTS_CATALOG.length})`}</span>
             </button>
             <button
               onClick={() => setTab('scenes')}
@@ -106,7 +111,7 @@ export function ModelBrowserDrawer({
               }}
             >
               <MapPin size={14} />
-              <span>SCENES (10)</span>
+              <span>SCENES ({SCENES_CATALOG.length})</span>
             </button>
           </div>
 
