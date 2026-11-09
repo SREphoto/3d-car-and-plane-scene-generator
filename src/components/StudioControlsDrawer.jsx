@@ -19,9 +19,18 @@ import {
   Eye,
   Camera,
   X,
-  RefreshCw
+  RefreshCw,
+  Palette,
+  Moon,
+  Droplets,
 } from 'lucide-react';
-import { WEATHER_PRESETS, LIGHTING_PRESETS, CAMERA_SHOTS } from '../data/catalog';
+import {
+  WEATHER_PRESETS,
+  LIGHTING_PRESETS,
+  CAMERA_SHOTS,
+  CAR_PAINT_COLORS,
+  CAR_PAINT_FINISHES,
+} from '../data/catalog';
 
 const WEATHER_ICONS = {
   sunny: Sun,
@@ -57,6 +66,18 @@ export function StudioControlsDrawer({
   onApplyLightingPreset,
   dynamicsState,
   onChangeDynamicsState,
+  // Paint & Shading
+  paintColor = '#b91c1c',
+  onChangePaintColor,
+  paintFinish = 'metallic',
+  onChangePaintFinish,
+  underglowOn = true,
+  onToggleUnderglow,
+  underglowColor = '#00f5d4',
+  onChangeUnderglowColor,
+  // Post-FX
+  postFx = { bloom: 0.82, vignette: 0.45, contrast: 1.22, blackLevel: 0.04 },
+  onChangePostFx,
   // Camera & Sequencer
   activeShotId,
   onSelectShot,
@@ -71,7 +92,7 @@ export function StudioControlsDrawer({
   onChangeSequenceClips,
   beatSyncEnabled,
 }) {
-  const [activeTab, setActiveTab] = useState('weather'); // 'weather' | 'lighting' | 'camera'
+  const [activeTab, setActiveTab] = useState('lighting'); // 'weather' | 'lighting' | 'paint' | 'camera'
 
   if (!isOpen) return null;
 
@@ -82,7 +103,9 @@ export function StudioControlsDrawer({
   const availableShots = CAMERA_SHOTS.filter((s) => s.modes.includes(mode));
 
   const handleAddClip = () => {
-    const nextShot = availableShots[Math.min(sequenceClips.length, availableShots.length - 1)] || availableShots[0];
+    const nextShot =
+      availableShots[Math.min(sequenceClips.length, availableShots.length - 1)] ||
+      availableShots[0];
     const newClip = {
       id: `clip-${Date.now()}`,
       shotId: nextShot.id,
@@ -123,58 +146,42 @@ export function StudioControlsDrawer({
   const totalDuration = sequenceClips.reduce((acc, c) => acc + (Number(c.duration) || 3.5), 0);
 
   return (
-    <aside style={{
-      position: 'absolute',
-      top: '62px',
-      right: 0,
-      bottom: 0,
-      width: '420px',
-      background: 'rgba(10, 14, 23, 0.9)',
-      backdropFilter: 'blur(20px)',
-      borderLeft: '1px solid var(--border-subtle)',
-      display: 'flex',
-      flexDirection: 'column',
-      zIndex: 35,
-      boxShadow: 'var(--shadow-panel)',
-    }}>
-      {/* Header Tabs */}
-      <div style={{
-        padding: '14px 16px',
-        borderBottom: '1px solid var(--border-subtle)',
+    <aside
+      style={{
+        position: 'absolute',
+        top: '62px',
+        right: 0,
+        bottom: 0,
+        width: '430px',
+        background: 'rgba(7, 10, 18, 0.94)',
+        backdropFilter: 'blur(24px)',
+        borderLeft: '1px solid var(--border-subtle)',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '6px',
-      }}>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            onClick={() => setActiveTab('weather')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 11px',
-              background: activeTab === 'weather' ? 'rgba(245, 158, 11, 0.18)' : 'transparent',
-              border: `1px solid ${activeTab === 'weather' ? 'var(--accent-amber)' : 'transparent'}`,
-              borderRadius: 'var(--radius-sm)',
-              color: activeTab === 'weather' ? 'var(--accent-amber)' : 'var(--text-secondary)',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            <CloudSun size={14} />
-            <span>WEATHER & 24H</span>
-          </button>
-
+        flexDirection: 'column',
+        zIndex: 35,
+        boxShadow: 'var(--shadow-panel)',
+      }}
+    >
+      {/* Header Tabs */}
+      <div
+        style={{
+          padding: '12px 14px',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '4px',
+        }}
+      >
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           <button
             onClick={() => setActiveTab('lighting')}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              padding: '6px 11px',
-              background: activeTab === 'lighting' ? 'rgba(56, 189, 248, 0.18)' : 'transparent',
+              gap: '5px',
+              padding: '6px 9px',
+              background: activeTab === 'lighting' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
               border: `1px solid ${activeTab === 'lighting' ? 'var(--accent-cyan)' : 'transparent'}`,
               borderRadius: 'var(--radius-sm)',
               color: activeTab === 'lighting' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
@@ -183,8 +190,48 @@ export function StudioControlsDrawer({
               cursor: 'pointer',
             }}
           >
-            <Sliders size={14} />
+            <Sliders size={13} />
             <span>LIGHTS & FX</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('paint')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 9px',
+              background: activeTab === 'paint' ? 'rgba(168, 85, 247, 0.2)' : 'transparent',
+              border: `1px solid ${activeTab === 'paint' ? '#c084fc' : 'transparent'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: activeTab === 'paint' ? '#c084fc' : 'var(--text-secondary)',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <Palette size={13} />
+            <span>PAINT & FINISH</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('weather')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 9px',
+              background: activeTab === 'weather' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
+              border: `1px solid ${activeTab === 'weather' ? 'var(--accent-amber)' : 'transparent'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: activeTab === 'weather' ? 'var(--accent-amber)' : 'var(--text-secondary)',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <CloudSun size={13} />
+            <span>WEATHER</span>
           </button>
 
           <button
@@ -192,9 +239,9 @@ export function StudioControlsDrawer({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              padding: '6px 11px',
-              background: activeTab === 'camera' ? 'rgba(244, 63, 94, 0.18)' : 'transparent',
+              gap: '5px',
+              padding: '6px 9px',
+              background: activeTab === 'camera' ? 'rgba(244, 63, 94, 0.2)' : 'transparent',
               border: `1px solid ${activeTab === 'camera' ? 'var(--accent-rose)' : 'transparent'}`,
               borderRadius: 'var(--radius-sm)',
               color: activeTab === 'camera' ? 'var(--accent-rose)' : 'var(--text-secondary)',
@@ -203,7 +250,7 @@ export function StudioControlsDrawer({
               cursor: 'pointer',
             }}
           >
-            <Video size={14} />
+            <Video size={13} />
             <span>DIRECTOR</span>
           </button>
         </div>
@@ -224,13 +271,602 @@ export function StudioControlsDrawer({
       </div>
 
       {/* Tab Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {/* ================= TAB 1: WEATHER & 24H TIME-OF-DAY ================= */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+        }}
+      >
+        {/* ================= TAB: LIGHTING & CINEMATIC FX ================= */}
+        {activeTab === 'lighting' && (
+          <>
+            {/* Dark & Moody Presets */}
+            <div>
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: 'var(--text-muted)',
+                  marginBottom: '10px',
+                  letterSpacing: '0.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Moon size={14} color="#38bdf8" />
+                <span>CINEMATIC LIGHTING PRESETS</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                {LIGHTING_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => onApplyLightingPreset(p)}
+                    style={{
+                      padding: '10px',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.12s ease',
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cinematic Post-Processing Controls */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  CINEMATIC POST-FX
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                  UNREAL BLOOM + GRADING
+                </span>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Anamorphic Bloom Glow</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {Math.round((postFx.bloom || 0.8) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="2.2"
+                  step="0.05"
+                  value={postFx.bloom || 0.82}
+                  onChange={(e) =>
+                    onChangePostFx({ ...postFx, bloom: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Black Level Depth (Crush Blacks)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {Math.round((postFx.blackLevel || 0.04) * 500)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.0"
+                  max="0.12"
+                  step="0.005"
+                  value={postFx.blackLevel || 0.04}
+                  onChange={(e) =>
+                    onChangePostFx({ ...postFx, blackLevel: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Cinema Lens Vignette</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {Math.round((postFx.vignette || 0.45) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1.0"
+                  step="0.05"
+                  value={postFx.vignette || 0.45}
+                  onChange={(e) =>
+                    onChangePostFx({ ...postFx, vignette: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Film Contrast Curve</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {(postFx.contrast || 1.22).toFixed(2)}x
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.9"
+                  max="1.7"
+                  step="0.02"
+                  value={postFx.contrast || 1.22}
+                  onChange={(e) =>
+                    onChangePostFx({ ...postFx, contrast: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Studio Floor & Environment Refinement */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  STUDIO STAGE & REFLECTIONS
+                </span>
+                <Droplets size={14} color="#38bdf8" />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Wet Obsidian Mirror Wetness</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {Math.round(lightingState.floorWetness * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="1.0"
+                  step="0.02"
+                  value={lightingState.floorWetness}
+                  onChange={(e) =>
+                    onChangeLightingState({ floorWetness: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Overhead Softbox Intensity</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {lightingState.softboxIntensity || 4.5}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="9.0"
+                  step="0.2"
+                  value={lightingState.softboxIntensity || 4.5}
+                  onChange={(e) =>
+                    onChangeLightingState({ softboxIntensity: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Ambient Darkness (Black Level)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {lightingState.ambientIntensity}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.0"
+                  max="1.2"
+                  step="0.05"
+                  value={lightingState.ambientIntensity}
+                  onChange={(e) =>
+                    onChangeLightingState({ ambientIntensity: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: '4px',
+                }}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Cinematic Light Sweep
+                </span>
+                <button
+                  onClick={() =>
+                    onChangeLightingState({ lightSweep: !lightingState.lightSweep })
+                  }
+                  style={{
+                    padding: '4px 10px',
+                    background: lightingState.lightSweep
+                      ? 'rgba(56, 189, 248, 0.2)'
+                      : 'rgba(255, 255, 255, 0.05)',
+                    border: `1px solid ${lightingState.lightSweep ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                    borderRadius: '6px',
+                    color: lightingState.lightSweep ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {lightingState.lightSweep ? 'SWEEPING' : 'STATIC'}
+                </button>
+              </div>
+            </div>
+
+            {/* Key / Rim Directional Light Controls */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  KEY SPOTLIGHT & SHADOW
+                </span>
+                <input
+                  type="color"
+                  value={lightingState.keyColor}
+                  onChange={(e) => onChangeLightingState({ keyColor: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Azimuth (360° Orbit)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{lightingState.keyAzimuth}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  value={lightingState.keyAzimuth}
+                  onChange={(e) =>
+                    onChangeLightingState({ keyAzimuth: parseInt(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Elevation (Height)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{lightingState.keyElevation}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="10"
+                  max="85"
+                  value={lightingState.keyElevation}
+                  onChange={(e) =>
+                    onChangeLightingState({ keyElevation: parseInt(e.target.value) })
+                  }
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Intensity</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {lightingState.keyIntensity.toFixed(1)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="8.0"
+                  step="0.1"
+                  value={lightingState.keyIntensity}
+                  onChange={(e) =>
+                    onChangeLightingState({ keyIntensity: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ================= TAB: PAINT & SHADING CUSTOMIZER ================= */}
+        {activeTab === 'paint' && (
+          <>
+            {/* Body Finish Selector */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                AUTOMOTIVE FINISH TYPE
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                {CAR_PAINT_FINISHES.map((f) => {
+                  const isSel = paintFinish === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => onChangePaintFinish(f.id)}
+                      style={{
+                        padding: '10px 8px',
+                        background: isSel ? 'rgba(192, 132, 252, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                        border: `1px solid ${isSel ? '#c084fc' : 'var(--border-subtle)'}`,
+                        borderRadius: '6px',
+                        color: isSel ? '#ffffff' : 'var(--text-secondary)',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {f.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Paint Color Swatches */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  BODY PAINT COLOR
+                </span>
+                <input
+                  type="color"
+                  value={paintColor}
+                  onChange={(e) => onChangePaintColor(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                {CAR_PAINT_COLORS.map((c) => {
+                  const isSel = paintColor.toLowerCase() === c.hex.toLowerCase();
+                  return (
+                    <button
+                      key={c.hex}
+                      onClick={() => onChangePaintColor(c.hex)}
+                      title={c.name}
+                      style={{
+                        height: '36px',
+                        background: c.hex,
+                        borderRadius: '6px',
+                        border: isSel ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
+                        cursor: 'pointer',
+                        transform: isSel ? 'scale(1.08)' : 'scale(1)',
+                        boxShadow: isSel ? '0 0 12px rgba(255,255,255,0.45)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Headlights & Underglow */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                LIGHTING PROJECTORS & UNDERGLOW
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Forward Headlight Beams
+                </span>
+                <button
+                  onClick={() =>
+                    onChangeDynamicsState({ headlightsOn: !dynamicsState.headlightsOn })
+                  }
+                  style={{
+                    padding: '4px 10px',
+                    background: dynamicsState.headlightsOn
+                      ? 'rgba(56, 189, 248, 0.2)'
+                      : 'rgba(255, 255, 255, 0.05)',
+                    border: `1px solid ${dynamicsState.headlightsOn ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                    borderRadius: '6px',
+                    color: dynamicsState.headlightsOn ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {dynamicsState.headlightsOn ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Chassis Neon Underglow
+                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="color"
+                    value={underglowColor}
+                    onChange={(e) => onChangeUnderglowColor(e.target.value)}
+                  />
+                  <button
+                    onClick={onToggleUnderglow}
+                    style={{
+                      padding: '4px 10px',
+                      background: underglowOn
+                        ? 'rgba(168, 85, 247, 0.2)'
+                        : 'rgba(255, 255, 255, 0.05)',
+                      border: `1px solid ${underglowOn ? '#c084fc' : 'var(--border-subtle)'}`,
+                      borderRadius: '6px',
+                      color: underglowOn ? '#c084fc' : 'var(--text-muted)',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {underglowOn ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ================= TAB: WEATHER & 24H TIME-OF-DAY ================= */}
         {activeTab === 'weather' && (
           <>
-            {/* 6 Weather Presets Grid */}
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '10px', letterSpacing: '0.5px' }}>
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: 'var(--text-muted)',
+                  marginBottom: '10px',
+                  letterSpacing: '0.5px',
+                }}
+              >
                 OUTDOOR WEATHER STATES
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
@@ -251,11 +887,16 @@ export function StudioControlsDrawer({
                         alignItems: 'center',
                         gap: '6px',
                         cursor: 'pointer',
-                        transition: 'all 0.12s ease',
                       }}
                     >
-                      <Icon size={20} color={isSelected ? 'var(--accent-amber)' : '#94a3b8'} />
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: isSelected ? '#ffffff' : 'var(--text-secondary)' }}>
+                      <Icon size={18} color={isSelected ? 'var(--accent-amber)' : 'var(--text-secondary)'} />
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                        }}
+                      >
                         {w.name}
                       </span>
                     </button>
@@ -264,27 +905,30 @@ export function StudioControlsDrawer({
               </div>
             </div>
 
-            {/* 24-Hour Time-of-Day */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
+            {/* 24h Time-of-Day Slider */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>24-HOUR SOLAR CYCLE</span>
-                <span style={{
-                  fontSize: '13px',
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 700,
-                  color: 'var(--accent-cyan)',
-                  background: 'rgba(56, 189, 248, 0.12)',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  24-HOUR SOLAR ARC
+                </span>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '13px',
+                    color: 'var(--accent-amber)',
+                    fontWeight: 700,
+                  }}
+                >
                   {timeFormatted}
                 </span>
               </div>
@@ -293,65 +937,61 @@ export function StudioControlsDrawer({
                 type="range"
                 min="0"
                 max="24"
-                step="0.1"
+                step="0.05"
                 value={timeOfDay}
                 onChange={(e) => onChangeTimeOfDay(parseFloat(e.target.value))}
               />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                <span>00:00 (NIGHT)</span>
-                <span>06:00 (DAWN)</span>
-                <span>12:00 (NOON)</span>
-                <span>18:30 (SUNSET)</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Auto Time-Lapse</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Continuous Time-Lapse
+                </span>
                 <button
                   onClick={onToggleTimeLapse}
                   style={{
-                    padding: '5px 12px',
-                    background: autoTimeLapse ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${autoTimeLapse ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                    padding: '4px 10px',
+                    background: autoTimeLapse
+                      ? 'rgba(245, 158, 11, 0.2)'
+                      : 'rgba(255, 255, 255, 0.05)',
+                    border: `1px solid ${autoTimeLapse ? 'var(--accent-amber)' : 'var(--border-subtle)'}`,
                     borderRadius: '6px',
-                    color: autoTimeLapse ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                    color: autoTimeLapse ? 'var(--accent-amber)' : 'var(--text-muted)',
                     fontSize: '11px',
                     fontWeight: 600,
                     cursor: 'pointer',
                   }}
                 >
-                  {autoTimeLapse ? 'RUNNING' : 'OFF'}
+                  {autoTimeLapse ? 'ACTIVE' : 'PAUSED'}
                 </button>
               </div>
             </div>
 
-            {/* Snow Accumulation on Ground & Vehicle (+Y Surfaces) */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
+            {/* Snow Accumulation Slider */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Snowflake size={15} color="var(--accent-cyan)" />
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>SNOW ACCUMULATION</span>
-                </div>
-                <span style={{
-                  fontSize: '12px',
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 700,
-                  color: 'var(--accent-cyan)',
-                }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  SNOW ACCUMULATION SHADER
+                </span>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '12px',
+                    color: 'var(--accent-cyan)',
+                    fontWeight: 700,
+                  }}
+                >
                   {Math.round(snowAccumulation * 100)}%
                 </span>
-              </div>
-
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
-                Real-time shader blends snow over the terrain, road shoulders, and top surfaces of the Car or Plane.
               </div>
 
               <input
@@ -369,7 +1009,9 @@ export function StudioControlsDrawer({
                   style={{
                     flex: 1,
                     padding: '6px 10px',
-                    background: autoAccumulateSnow ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255, 255, 255, 0.05)',
+                    background: autoAccumulateSnow
+                      ? 'rgba(56, 189, 248, 0.18)'
+                      : 'rgba(255, 255, 255, 0.05)',
                     border: `1px solid ${autoAccumulateSnow ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
                     borderRadius: '6px',
                     color: autoAccumulateSnow ? 'var(--accent-cyan)' : 'var(--text-muted)',
@@ -398,18 +1040,22 @@ export function StudioControlsDrawer({
               </div>
             </div>
 
-            {/* Thunderstorm Lightning Strike Action */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-            }}>
+            {/* Lightning Strike Action */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>THUNDERSTORM FX</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  THUNDERSTORM FX
+                </span>
                 <button
                   onClick={onTriggerLightning}
                   style={{
@@ -424,319 +1070,29 @@ export function StudioControlsDrawer({
                     fontSize: '11px',
                     fontWeight: 700,
                     cursor: 'pointer',
-                    boxShadow: '0 2px 10px rgba(245, 158, 11, 0.35)',
                   }}
                 >
                   <Zap size={13} />
                   <span>STRIKE LIGHTNING</span>
                 </button>
               </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  <span>Wind Speed & Squall Turbulence</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round(windSpeed * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.1"
-                  max="1.5"
-                  step="0.05"
-                  value={windSpeed}
-                  onChange={(e) => onChangeWindSpeed(parseFloat(e.target.value))}
-                />
-              </div>
             </div>
           </>
         )}
 
-        {/* ================= TAB 2: LIGHTING & DYNAMICS ================= */}
-        {activeTab === 'lighting' && (
-          <>
-            {/* Lighting Presets */}
-            <div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '10px', letterSpacing: '0.5px' }}>
-                STUDIO LIGHTING PRESETS
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                {LIGHTING_PRESETS.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => onApplyLightingPreset(p)}
-                    style={{
-                      padding: '10px',
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-md)',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.12s ease',
-                    }}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Key / Sun Light Sliders */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>KEY / SUN LIGHT</span>
-                <input
-                  type="color"
-                  value={lightingState.keyColor}
-                  onChange={(e) => onChangeLightingState({ keyColor: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  <span>Azimuth (360° Orbit)</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{lightingState.keyAzimuth}°</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="360"
-                  value={lightingState.keyAzimuth}
-                  onChange={(e) => onChangeLightingState({ keyAzimuth: parseInt(e.target.value) })}
-                />
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  <span>Elevation (Height)</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{lightingState.keyElevation}°</span>
-                </div>
-                <input
-                  type="range"
-                  min="5"
-                  max="90"
-                  value={lightingState.keyElevation}
-                  onChange={(e) => onChangeLightingState({ keyElevation: parseInt(e.target.value) })}
-                />
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  <span>Key Intensity</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{lightingState.keyIntensity.toFixed(1)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.2"
-                  max="6.0"
-                  step="0.1"
-                  value={lightingState.keyIntensity}
-                  onChange={(e) => onChangeLightingState({ keyIntensity: parseFloat(e.target.value) })}
-                />
-              </div>
-            </div>
-
-            {/* Fill & Rim Lights */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>FILL & RIM LIGHTS</span>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Fill Light</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="color"
-                    value={lightingState.fillColor}
-                    onChange={(e) => onChangeLightingState({ fillColor: e.target.value })}
-                  />
-                  <input
-                    type="range"
-                    min="0"
-                    max="4.0"
-                    step="0.1"
-                    style={{ width: '80px' }}
-                    value={lightingState.fillIntensity}
-                    onChange={(e) => onChangeLightingState({ fillIntensity: parseFloat(e.target.value) })}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Rim Silhouette Light</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="color"
-                    value={lightingState.rimColor}
-                    onChange={(e) => onChangeLightingState({ rimColor: e.target.value })}
-                  />
-                  <input
-                    type="range"
-                    min="0"
-                    max="6.0"
-                    step="0.1"
-                    style={{ width: '80px' }}
-                    value={lightingState.rimIntensity}
-                    onChange={(e) => onChangeLightingState({ rimIntensity: parseFloat(e.target.value) })}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Overhead Studio Light Sweep</span>
-                <button
-                  onClick={() => onChangeLightingState({ lightSweep: !lightingState.lightSweep })}
-                  style={{
-                    padding: '4px 10px',
-                    background: lightingState.lightSweep ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${lightingState.lightSweep ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
-                    borderRadius: '6px',
-                    color: lightingState.lightSweep ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {lightingState.lightSweep ? 'ACTIVE' : 'OFF'}
-                </button>
-              </div>
-            </div>
-
-            {/* Vehicle & Plane Dynamics Toggles */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-            }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>LIVE VEHICLE & PLANE DYNAMICS</span>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Headlights & Spotlights</span>
-                <button
-                  onClick={() => onChangeDynamicsState({ headlightsOn: !dynamicsState.headlightsOn })}
-                  style={{
-                    padding: '4px 10px',
-                    background: dynamicsState.headlightsOn ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${dynamicsState.headlightsOn ? 'var(--accent-amber)' : 'var(--border-subtle)'}`,
-                    borderRadius: '6px',
-                    color: dynamicsState.headlightsOn ? 'var(--accent-amber)' : 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {dynamicsState.headlightsOn ? 'ON' : 'OFF'}
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Wheel Spin & Motion Speed</span>
-                <button
-                  onClick={() => onChangeDynamicsState({ wheelSpin: !dynamicsState.wheelSpin })}
-                  style={{
-                    padding: '4px 10px',
-                    background: dynamicsState.wheelSpin ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${dynamicsState.wheelSpin ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
-                    borderRadius: '6px',
-                    color: dynamicsState.wheelSpin ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {dynamicsState.wheelSpin ? 'SPINNING' : 'STOPPED'}
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Aero Wind Tunnel Streamlines</span>
-                <button
-                  onClick={() => onChangeDynamicsState({ aeroStreamlines: !dynamicsState.aeroStreamlines })}
-                  style={{
-                    padding: '4px 10px',
-                    background: dynamicsState.aeroStreamlines ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${dynamicsState.aeroStreamlines ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
-                    borderRadius: '6px',
-                    color: dynamicsState.aeroStreamlines ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {dynamicsState.aeroStreamlines ? 'ACTIVE' : 'OFF'}
-                </button>
-              </div>
-
-              {mode === 'planes' && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Flight Banking & Pitch</span>
-                    <button
-                      onClick={() => onChangeDynamicsState({ planeBanking: !dynamicsState.planeBanking })}
-                      style={{
-                        padding: '4px 10px',
-                        background: dynamicsState.planeBanking ? 'rgba(244, 63, 94, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                        border: `1px solid ${dynamicsState.planeBanking ? 'var(--accent-rose)' : 'var(--border-subtle)'}`,
-                        borderRadius: '6px',
-                        color: dynamicsState.planeBanking ? 'var(--accent-rose)' : 'var(--text-muted)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {dynamicsState.planeBanking ? 'BANKING' : 'OFF'}
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Jet Engine & Wing Contrails</span>
-                    <button
-                      onClick={() => onChangeDynamicsState({ planeContrails: !dynamicsState.planeContrails })}
-                      style={{
-                        padding: '4px 10px',
-                        background: dynamicsState.planeContrails ? 'rgba(244, 63, 94, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                        border: `1px solid ${dynamicsState.planeContrails ? 'var(--accent-rose)' : 'var(--border-subtle)'}`,
-                        borderRadius: '6px',
-                        color: dynamicsState.planeContrails ? 'var(--accent-rose)' : 'var(--text-muted)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {dynamicsState.planeContrails ? 'ACTIVE' : 'OFF'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ================= TAB 3: CAMERA DIRECTOR & REEL SEQUENCER ================= */}
+        {/* ================= TAB: CAMERA DIRECTOR & REEL SEQUENCER ================= */}
         {activeTab === 'camera' && (
           <>
-            {/* Camera Moves Grid */}
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '10px', letterSpacing: '0.5px' }}>
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: 'var(--text-muted)',
+                  marginBottom: '10px',
+                  letterSpacing: '0.5px',
+                }}
+              >
                 SINGLE CAMERA SHOT PRESETS
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -748,98 +1104,79 @@ export function StudioControlsDrawer({
                       onClick={() => onSelectShot(shot.id)}
                       style={{
                         padding: '10px 12px',
-                        background: isSelected ? 'rgba(244, 63, 94, 0.16)' : 'var(--bg-card)',
+                        background: isSelected ? 'rgba(244, 63, 94, 0.2)' : 'var(--bg-card)',
                         border: `1px solid ${isSelected ? 'var(--accent-rose)' : 'var(--border-subtle)'}`,
                         borderRadius: 'var(--radius-md)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
                         textAlign: 'left',
-                        transition: 'all 0.12s ease',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '3px',
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                          }}
+                        >
                           {shot.name}
-                        </div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                          {shot.description}
-                        </div>
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 800,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: isSelected
+                              ? 'var(--accent-rose)'
+                              : 'rgba(255, 255, 255, 0.08)',
+                            color: isSelected ? '#ffffff' : 'var(--text-muted)',
+                            fontFamily: 'var(--font-mono)',
+                          }}
+                        >
+                          {shot.badge}
+                        </span>
                       </div>
-                      <span style={{
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        color: isSelected ? 'var(--accent-rose)' : 'var(--text-muted)',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                      }}>
-                        {shot.badge}
-                      </span>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                        {shot.description}
+                      </div>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Camera Speed & FOV */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  <span>Camera Movement Speed</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{shotSpeed.toFixed(1)}x</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.3"
-                  max="2.5"
-                  step="0.1"
-                  value={shotSpeed}
-                  onChange={(e) => onChangeShotSpeed(parseFloat(e.target.value))}
-                />
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  <span>Base Lens Field of View (FOV)</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{cameraFov}°</span>
-                </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="75"
-                  value={cameraFov}
-                  onChange={(e) => onChangeCameraFov(parseInt(e.target.value))}
-                />
-              </div>
-            </div>
-
-            {/* Multi-Shot Auto-Director Timeline */}
-            <div style={{
-              background: 'var(--bg-card)',
-              padding: '14px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
+            {/* Sequence Clips Manager */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>MULTI-SHOT REEL SEQUENCER</div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                    Total Runtime: {totalDuration.toFixed(1)}s
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                    MULTI-SHOT REEL SEQUENCER
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {sequenceClips.length} shots • {totalDuration.toFixed(1)}s runtime
                   </div>
                 </div>
+
                 <button
                   onClick={handleAutoGenerateReel}
                   style={{
@@ -847,12 +1184,12 @@ export function StudioControlsDrawer({
                     alignItems: 'center',
                     gap: '4px',
                     padding: '5px 10px',
-                    background: 'rgba(168, 85, 247, 0.2)',
-                    border: '1px solid var(--accent-purple)',
+                    background: 'rgba(244, 63, 94, 0.15)',
+                    border: '1px solid rgba(244, 63, 94, 0.35)',
                     borderRadius: '6px',
-                    color: '#c084fc',
+                    color: 'var(--accent-rose)',
                     fontSize: '11px',
-                    fontWeight: 600,
+                    fontWeight: 700,
                     cursor: 'pointer',
                   }}
                 >
@@ -867,33 +1204,41 @@ export function StudioControlsDrawer({
                   <div
                     key={clip.id}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      background: 'rgba(0, 0, 0, 0.45)',
+                      background: 'rgba(255, 255, 255, 0.03)',
                       padding: '8px 10px',
                       borderRadius: '6px',
                       border: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
                     }}
                   >
-                    <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', width: '18px' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: 'var(--text-muted)',
+                        width: '18px',
+                      }}
+                    >
                       #{idx + 1}
                     </span>
+
                     <select
                       value={clip.shotId}
                       onChange={(e) => handleClipChange(idx, 'shotId', e.target.value)}
                       style={{
                         flex: 1,
-                        background: 'transparent',
-                        border: 'none',
+                        background: 'rgba(0, 0, 0, 0.4)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
                         color: '#ffffff',
                         fontSize: '11px',
-                        outline: 'none',
-                        cursor: 'pointer',
+                        padding: '4px 6px',
                       }}
                     >
-                      {availableShots.filter((s) => s.id !== 'free_orbit').map((s) => (
-                        <option key={s.id} value={s.id} style={{ background: '#0f172a' }}>
+                      {availableShots.map((s) => (
+                        <option key={s.id} value={s.id}>
                           {s.name}
                         </option>
                       ))}
@@ -902,38 +1247,37 @@ export function StudioControlsDrawer({
                     <input
                       type="number"
                       min="1"
-                      max="15"
+                      max="12"
                       step="0.5"
                       value={clip.duration}
-                      onChange={(e) => handleClipChange(idx, 'duration', parseFloat(e.target.value))}
+                      onChange={(e) =>
+                        handleClipChange(idx, 'duration', parseFloat(e.target.value))
+                      }
                       style={{
-                        width: '44px',
-                        background: 'rgba(255, 255, 255, 0.08)',
-                        border: 'none',
+                        width: '52px',
+                        background: 'rgba(0, 0, 0, 0.4)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '4px',
-                        color: 'var(--accent-cyan)',
+                        color: '#ffffff',
                         fontSize: '11px',
-                        fontFamily: 'var(--font-mono)',
-                        padding: '3px 4px',
+                        padding: '4px 6px',
                         textAlign: 'center',
                       }}
                     />
                     <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>s</span>
 
-                    {sequenceClips.length > 1 && (
-                      <button
-                        onClick={() => handleRemoveClip(idx)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          padding: '2px',
-                        }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleRemoveClip(idx)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: '2px',
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -946,10 +1290,10 @@ export function StudioControlsDrawer({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '4px',
+                    gap: '6px',
                     padding: '7px',
                     background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px dashed var(--border-subtle)',
+                    border: '1px solid var(--border-subtle)',
                     borderRadius: '6px',
                     color: 'var(--text-secondary)',
                     fontSize: '11px',
@@ -958,54 +1302,32 @@ export function StudioControlsDrawer({
                   }}
                 >
                   <Plus size={13} />
-                  <span>Add Shot</span>
+                  <span>Add Shot Clip</span>
                 </button>
 
-                {isPlayingSequence ? (
-                  <button
-                    onClick={onStopSequence}
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      padding: '7px',
-                      background: '#ef4444',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Square size={13} />
-                    <span>Stop Sequence</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={onStartSequence}
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      padding: '7px',
-                      background: 'linear-gradient(135deg, #0284c7, #38bdf8)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Play size={13} />
-                    <span>Preview Reel</span>
-                  </button>
-                )}
+                <button
+                  onClick={isPlayingSequence ? onStopSequence : onStartSequence}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '7px',
+                    background: isPlayingSequence
+                      ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                      : 'linear-gradient(135deg, #f43f5e, #be123c)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {isPlayingSequence ? <Square size={13} /> : <Play size={13} />}
+                  <span>{isPlayingSequence ? 'Stop Preview' : 'Play Sequence'}</span>
+                </button>
               </div>
             </div>
           </>

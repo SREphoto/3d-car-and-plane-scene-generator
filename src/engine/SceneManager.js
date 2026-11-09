@@ -6,6 +6,8 @@ import { WeatherSystem } from './WeatherSystem.js';
 import { LightingRig } from './LightingRig.js';
 import { VehicleDynamics } from './VehicleDynamics.js';
 import { CameraDirector } from './CameraDirector.js';
+import { CarMaterialEnhancer } from './CarMaterialEnhancer.js';
+import { PostProcessingPipeline } from './PostProcessingPipeline.js';
 
 export class SceneManager {
   constructor(canvas, callbacks = {}) {
@@ -26,9 +28,9 @@ export class SceneManager {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#070a12');
+    this.scene.background = new THREE.Color('#010204'); // Deep pitch-black cinematic background
 
-    this.camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 800);
+    this.camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 800);
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
@@ -54,6 +56,8 @@ export class SceneManager {
     this.weatherSystem = new WeatherSystem(this.scene);
     this.vehicleDynamics = new VehicleDynamics(this.scene);
     this.cameraDirector = new CameraDirector(this.camera, this.controls);
+    this.enhancer = new CarMaterialEnhancer();
+    this.pipeline = new PostProcessingPipeline(this.renderer, this.scene, this.camera);
 
     this.cameraDirector.onShotChangeCallback = (shotId, isSeq, clipIdx) => {
       if (this.callbacks.onShotChange) {
@@ -61,11 +65,12 @@ export class SceneManager {
       }
     };
 
-    this.activeSceneId = 'outdoor_world';
+    this.activeSceneId = 'dark_void'; // Start in the gorgeous Obsidian Blackout Stage!
     this.activeMode = 'cars';
     this.subjectCache = new Map();
     this.locationCache = new Map();
     this.loadToken = 0;
+    this.windTunnelFan = null;
 
     this.clock = new THREE.Clock();
     this.elapsed = 0;
@@ -83,12 +88,13 @@ export class SceneManager {
     const w = Math.max(320, rect.width);
     const h = Math.max(240, rect.height);
     this.renderer.setSize(w, h, false);
+    this.pipeline.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
 
   /**
-   * Loads and normalizes a Car or Plane GLB model so it sits centered at (0,0,0) with Y=0 datum
+   * Loads, normalizes, and enhances a Car or Plane GLB model
    */
   async loadSubject(item, mode = 'cars') {
     this.activeMode = mode;
@@ -134,24 +140,6 @@ export class SceneManager {
               mName.includes('floor_plane')
             ) {
               child.visible = false;
-              return;
-            }
-            child.castShadow = true;
-            child.receiveShadow = true;
-
-            if (child.material) {
-              const mats = Array.isArray(child.material) ? child.material : [child.material];
-              mats.forEach((m) => {
-                m.envMapIntensity = 1.35;
-                if (
-                  matName.includes('glass') ||
-                  matName.includes('window') ||
-                  matName.includes('windshield')
-                ) {
-                  m.transparent = true;
-                  if (m.opacity > 0.75) m.opacity = 0.42;
-                }
-              });
             }
           }
         });
@@ -164,7 +152,7 @@ export class SceneManager {
         box.getCenter(center);
 
         const maxHoriz = Math.max(size.x, size.z, 0.001);
-        const targetSpan = item.targetSize || (mode === 'planes' ? 25.0 : 4.75);
+        const targetSpan = item.targetSize || (mode === 'planes' ? 26.0 : 4.8);
         const scale = targetSpan / maxHoriz;
 
         rootGroup = new THREE.Group();
@@ -186,8 +174,13 @@ export class SceneManager {
           d: scaledSize.z,
         };
 
+        // AAA Automotive Material Shading Upgrade:
+        // Converts flat, chalky GLTF materials to high-gloss clearcoat MeshPhysicalMaterial with wet reflections
+        this.enhancer.enhance(rootGroup, mode, bounds);
+
         // Attach dynamic Snow Accumulation & Wetness shader to subject materials
         this.weatherSystem.applySnowShaderToRoot(rootGroup);
+
         this.subjectCache.set(item.id, { rootGroup, bounds });
       }
 
@@ -214,10 +207,11 @@ export class SceneManager {
   }
 
   /**
-   * Switches between Outdoor World, Imported GLB Locations, and Procedural Studios
+   * Switches between Dark Void, Wind Tunnel, Outdoor World, and Procedural Studios
    */
   async setScene(sceneItem) {
     this.activeSceneId = sceneItem.id;
+    this.windTunnelFan = null;
 
     // Clear imported location holder
     while (this.locationHolder.children.length > 0) {
@@ -256,38 +250,72 @@ export class SceneManager {
           });
 
           const rawLoc = gltf.scene;
-          rawLoc.traverse((child) => {
-            if (child.isMesh) {
-              child.receiveShadow = true;
-              child.castShadow = true;
-            }
-          });
 
-          const box = new THREE.Box3().setFromObject(rawLoc);
-          const size = new THREE.Vector3();
-          const center = new THREE.Vector3();
-          box.getSize(size);
-          box.getCenter(center);
+          // For the Wind Tunnel:
+          if (sceneItem.id === 'wind_tunnel') {
+            // Find rotating fan blade
+            rawLoc.traverse((child) => {
+              if (child.name === 'Elice') {
+                this.windTunnelFan = child;
+              }
+              if (child.isMesh) {
+                child.receiveShadow = true;
+                if (child.material) {
+                  child.material.envMapIntensity = 1.8;
+                  if (child.material.roughness > 0.4) child.material.roughness = 0.35;
+                }
+              }
+            });
 
-          const maxSpan = Math.max(size.x, size.z, 0.001);
-          const targetSpan = sceneItem.targetSpan || 30.0;
-          const scale = targetSpan / maxSpan;
+            // The turntable floor 'Sol' in Blender is ALREADY at Y = 0.000!
+            // We scale the tunnel chamber cleanly around the car without shifting Y
+            locGroup = new THREE.Group();
+            rawLoc.scale.setScalar(0.42);
+            rawLoc.position.set(0, 0, 0);
+            locGroup.add(rawLoc);
+            this.locationCache.set(sceneItem.id, locGroup);
+          } else {
+            rawLoc.traverse((child) => {
+              if (child.isMesh) {
+                child.receiveShadow = true;
+                child.castShadow = true;
+                if (child.material) {
+                  child.material.envMapIntensity = 1.6;
+                }
+              }
+            });
 
-          locGroup = new THREE.Group();
-          rawLoc.scale.setScalar(scale);
+            const box = new THREE.Box3().setFromObject(rawLoc);
+            const size = new THREE.Vector3();
+            const center = new THREE.Vector3();
+            box.getSize(size);
+            box.getCenter(center);
 
-          const scaledBox = new THREE.Box3().setFromObject(rawLoc);
-          const scaledCenter = new THREE.Vector3();
-          scaledBox.getCenter(scaledCenter);
+            const maxSpan = Math.max(size.x, size.z, 0.001);
+            const targetSpan = sceneItem.targetSpan || 30.0;
+            const scale = targetSpan / maxSpan;
 
-          // Align floor near Y = 0
-          rawLoc.position.set(-scaledCenter.x, -scaledBox.min.y - 0.02, -scaledCenter.z);
-          locGroup.add(rawLoc);
-          this.locationCache.set(sceneItem.id, locGroup);
+            locGroup = new THREE.Group();
+            rawLoc.scale.setScalar(scale);
+
+            const scaledBox = new THREE.Box3().setFromObject(rawLoc);
+            const scaledCenter = new THREE.Vector3();
+            scaledBox.getCenter(scaledCenter);
+
+            rawLoc.position.set(-scaledCenter.x, -scaledBox.min.y - 0.02, -scaledCenter.z);
+            locGroup.add(rawLoc);
+            this.locationCache.set(sceneItem.id, locGroup);
+          }
         }
 
         if (this.activeSceneId === sceneItem.id) {
           this.locationHolder.add(locGroup);
+          // If wind tunnel, bind fan
+          if (sceneItem.id === 'wind_tunnel') {
+            locGroup.traverse((child) => {
+              if (child.name === 'Elice') this.windTunnelFan = child;
+            });
+          }
         }
       } catch (err) {
         console.error('Failed to load location GLB:', err);
@@ -297,6 +325,31 @@ export class SceneManager {
         }
       }
     }
+  }
+
+  // --- Real-Time Customization Handlers for UI ---
+  setCarPaintColor(hex) {
+    this.enhancer.setPaintColor(hex);
+  }
+
+  setCarPaintFinish(finish) {
+    this.enhancer.setPaintFinish(finish);
+  }
+
+  setHeadlights(enabled) {
+    this.enhancer.setHeadlights(enabled);
+    this.vehicleDynamics.setHeadlights(enabled);
+  }
+
+  setUnderglow(enabled, colorHex) {
+    this.enhancer.setUnderglow(enabled, colorHex);
+  }
+
+  setPostProcessing({ bloom, vignette, contrast, blackLevel }) {
+    if (bloom !== undefined) this.pipeline.setBloom(bloom);
+    if (vignette !== undefined) this.pipeline.setVignette(vignette);
+    if (contrast !== undefined) this.pipeline.setContrast(contrast);
+    if (blackLevel !== undefined) this.pipeline.setBlackLevel(blackLevel);
   }
 
   _animate() {
@@ -318,7 +371,12 @@ export class SceneManager {
       }
     }
 
-    // 2. Update Outdoor Weather & 24h Time-of-Day
+    // 2. Rotate Wind Tunnel Fan if in Wind Tunnel scene
+    if (this.activeSceneId === 'wind_tunnel' && this.windTunnelFan) {
+      this.windTunnelFan.rotation.y += dt * 18.0;
+    }
+
+    // 3. Update Outdoor Weather & 24h Time-of-Day
     const isOutdoor = this.activeSceneId === 'outdoor_world';
     const prevLightning = this.weatherSystem.lightningFlash;
     this.weatherSystem.update(dt, this.elapsed, this.lightingRig, isOutdoor);
@@ -338,10 +396,10 @@ export class SceneManager {
       });
     }
 
-    // 3. Update Studio Lighting Rig & Procedural Scenes
+    // 4. Update Studio Lighting Rig & Streamlines
     this.lightingRig.update(dt, this.elapsed, this.vehicleDynamics.state.wheelSpin);
 
-    // 4. Update Vehicle & Plane Live Dynamics
+    // 5. Update Vehicle & Plane Live Dynamics
     this.vehicleDynamics.update(
       dt,
       this.elapsed,
@@ -349,16 +407,16 @@ export class SceneManager {
       this.activeSceneId
     );
 
-    // 5. Update Cinematography Camera Director
+    // 6. Update Cinematography Camera Director
     const subjectY = this.vehicleDynamics.subjectRoot
       ? this.vehicleDynamics.subjectRoot.position.y
       : 0;
     this.cameraDirector.update(dt, subjectY);
 
-    // 6. Render 3D Viewport
-    this.renderer.render(this.scene, this.camera);
+    // 7. Render with AAA Post-Processing Pipeline (Bloom + Cinematic Grading + Vignette)
+    this.pipeline.render(dt);
 
-    // 7. Capture frame into Social Media Video Exporter if recording
+    // 8. Capture frame into Social Media Video Exporter if recording
     if (this.videoExporter && this.videoExporter.isRecording) {
       this.videoExporter.captureFrame();
     }

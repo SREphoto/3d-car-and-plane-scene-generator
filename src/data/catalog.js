@@ -222,6 +222,24 @@ export const PLANES_CATALOG = [
 
 export const SCENES_CATALOG = [
   {
+    id: 'dark_void',
+    name: 'The Obsidian Void (Cinema Blackout Stage)',
+    type: 'procedural',
+    modes: ['cars', 'planes'],
+    badge: 'BLACKOUT STUDIO',
+    description: 'Pitch-black cinema stage, mirror wet floor, dual overhead softbox lightbanks, and sculpted aerodynamic rim highlights.',
+  },
+  {
+    id: 'wind_tunnel',
+    name: 'Aero Wind Tunnel Facility',
+    type: 'glb',
+    modes: ['cars', 'planes'],
+    badge: 'AERO + SMOKE',
+    url: assetUrl('assets/Locations/wind-tunnel/wind_tunnel.glb'),
+    targetSpan: 32,
+    description: 'Full-scale aerodynamic testing chamber with rotating turbine fan, circular turntable, and active laminar streamline smoke trails.',
+  },
+  {
     id: 'outdoor_world',
     name: 'Alpine Highway & Tarmac (Weather + 24h)',
     type: 'outdoor',
@@ -240,16 +258,6 @@ export const SCENES_CATALOG = [
     url: assetUrl('assets/Locations/car_garage.glb'),
     targetSpan: 28,
     description: 'Detailed underground tuner & motorsport garage with concrete pillars and overhead bays.',
-  },
-  {
-    id: 'wind_tunnel',
-    name: 'Aero Wind Tunnel Facility',
-    type: 'glb',
-    modes: ['cars', 'planes'],
-    badge: 'AERO + SMOKE',
-    url: assetUrl('assets/Locations/wind-tunnel/wind_tunnel.glb'),
-    targetSpan: 32,
-    description: 'Full-scale aerodynamic testing chamber with turbine fan and active streamline smoke trails.',
   },
   {
     id: 'abandoned_vr_gallery',
@@ -397,6 +405,38 @@ export const WEATHER_PRESETS = [
 ];
 
 export const LIGHTING_PRESETS = [
+  {
+    id: 'blackout_void',
+    name: 'Obsidian Blackout (Void)',
+    keyColor: '#ffffff',
+    keyIntensity: 4.5,
+    keyAzimuth: 45,
+    keyElevation: 55,
+    fillColor: '#93c5fd',
+    fillIntensity: 1.4,
+    rimColor: '#f8fafc',
+    rimIntensity: 4.8,
+    ambientColor: '#010204',
+    ambientIntensity: 0.1,
+    exposure: 1.15,
+    floorWetness: 0.95,
+  },
+  {
+    id: 'film_noir',
+    name: 'Film Noir Chiaroscuro',
+    keyColor: '#fff5ea',
+    keyIntensity: 5.5,
+    keyAzimuth: 25,
+    keyElevation: 75,
+    fillColor: '#05070f',
+    fillIntensity: 0.2,
+    rimColor: '#38bdf8',
+    rimIntensity: 3.5,
+    ambientColor: '#000000',
+    ambientIntensity: 0.05,
+    exposure: 1.1,
+    floorWetness: 0.85,
+  },
   {
     id: 'showroom',
     name: 'Showroom Clean',
@@ -641,3 +681,24 @@ export const MUSIC_CATALOG = RAW_MUSIC_FILES.map((file, idx) => {
     vibe: vibes[idx % vibes.length],
   };
 });
+
+export const CAR_PAINT_COLORS = [
+  { name: 'Rosso Corsa Red', hex: '#b91c1c' },
+  { name: 'Obsidian Black', hex: '#0a0a0c' },
+  { name: 'Liquid Silver', hex: '#94a3b8' },
+  { name: 'Frozen Stealth Grey', hex: '#374151' },
+  { name: 'Midnight Navy', hex: '#0f172a' },
+  { name: 'British Racing Green', hex: '#064e3b' },
+  { name: 'Cyberpunk Sunset Gold', hex: '#d97706' },
+  { name: 'Electric Miami Cyan', hex: '#06b6d4' },
+  { name: 'Deep Violet Pearl', hex: '#581c87' },
+  { name: 'Pure Chalk White', hex: '#f8fafc' },
+];
+
+export const CAR_PAINT_FINISHES = [
+  { id: 'metallic', name: 'Metallic Gloss' },
+  { id: 'matte', name: 'Frozen Satin Matte' },
+  { id: 'candy', name: 'Deep Candy Wet' },
+  { id: 'carbon', name: 'Carbon Kevlar Stealth' },
+];
+

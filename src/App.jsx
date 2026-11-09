@@ -61,10 +61,22 @@ export default function App() {
   const [dynamicsState, setDynamicsState] = useState({
     headlightsOn: true,
     wheelSpin: true,
-    aeroStreamlines: false,
+    aeroStreamlines: true,
     planeBanking: true,
     planeContrails: true,
     planeStrobes: true,
+  });
+
+  // Car Paint & Shading Customizer
+  const [paintColor, setPaintColor] = useState('#b91c1c');
+  const [paintFinish, setPaintFinish] = useState('metallic');
+  const [underglowOn, setUnderglowOn] = useState(true);
+  const [underglowColor, setUnderglowColor] = useState('#00f5d4');
+  const [postFx, setPostFx] = useState({
+    bloom: 0.82,
+    vignette: 0.45,
+    contrast: 1.22,
+    blackLevel: 0.04,
   });
 
   // Cinematography & Reel Sequencer
@@ -264,6 +276,45 @@ export default function App() {
     setDynamicsState(updated);
     if (sceneManagerRef.current) {
       sceneManagerRef.current.vehicleDynamics.applyState(updated);
+      if (partial.headlightsOn !== undefined) {
+        sceneManagerRef.current.setHeadlights(partial.headlightsOn);
+      }
+    }
+  };
+
+  const handleChangePaintColor = (hex) => {
+    setPaintColor(hex);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setCarPaintColor(hex);
+    }
+  };
+
+  const handleChangePaintFinish = (finish) => {
+    setPaintFinish(finish);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setCarPaintFinish(finish);
+    }
+  };
+
+  const handleToggleUnderglow = () => {
+    const next = !underglowOn;
+    setUnderglowOn(next);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setUnderglow(next, underglowColor);
+    }
+  };
+
+  const handleChangeUnderglowColor = (hex) => {
+    setUnderglowColor(hex);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setUnderglow(underglowOn, hex);
+    }
+  };
+
+  const handleChangePostFx = (fx) => {
+    setPostFx(fx);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setPostProcessing(fx);
     }
   };
 
@@ -528,6 +579,17 @@ export default function App() {
         onApplyLightingPreset={handleApplyLightingPreset}
         dynamicsState={dynamicsState}
         onChangeDynamicsState={handleChangeDynamicsState}
+        // Paint & Shading
+        paintColor={paintColor}
+        onChangePaintColor={handleChangePaintColor}
+        paintFinish={paintFinish}
+        onChangePaintFinish={handleChangePaintFinish}
+        underglowOn={underglowOn}
+        onToggleUnderglow={handleToggleUnderglow}
+        underglowColor={underglowColor}
+        onChangeUnderglowColor={handleChangeUnderglowColor}
+        postFx={postFx}
+        onChangePostFx={handleChangePostFx}
         // Camera & Sequencer
         activeShotId={activeShotId}
         onSelectShot={handleSelectShot}

@@ -1,34 +1,36 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { createAutomotiveStudioScene } from './StudioEnvironment.js';
 
 export class LightingRig {
   constructor(scene, renderer) {
     this.scene = scene;
     this.renderer = renderer;
 
-    // Generate crisp PMREM studio reflection environment for metallic car paint & fuselage
+    // Generate crisp HDR studio reflection environment for car paint, clearcoat & fuselage
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
-    const roomEnv = new RoomEnvironment();
-    this.envTexture = pmremGenerator.fromScene(roomEnv, 0.04).texture;
+    const studioEnvScene = createAutomotiveStudioScene();
+    this.envTexture = pmremGenerator.fromScene(studioEnvScene, 0.04).texture;
     this.scene.environment = this.envTexture;
-    this.scene.environmentIntensity = 1.1;
+    this.scene.environmentIntensity = 2.2;
 
     this.state = {
       keyColor: '#ffffff',
-      keyIntensity: 3.2,
-      keyAzimuth: 42,
-      keyElevation: 48,
-      fillColor: '#60a5fa',
-      fillIntensity: 1.4,
+      keyIntensity: 3.8,
+      keyAzimuth: 45,
+      keyElevation: 52,
+      fillColor: '#93c5fd',
+      fillIntensity: 1.6,
       rimColor: '#f8fafc',
-      rimIntensity: 2.4,
-      ambientColor: '#1e293b',
-      ambientIntensity: 1.1,
+      rimIntensity: 3.2,
+      ambientColor: '#0a0f1d',
+      ambientIntensity: 0.45, // Dropped down from 1.1 so dark scenes are truly deep & moody
       exposure: 1.15,
-      floorWetness: 0.55,
-      fogDensity: 0.004,
+      floorWetness: 0.75, // Default wet mirror floor
+      fogDensity: 0.005,
       lightSweep: true,
+      softboxIntensity: 4.5,
+      blackoutMode: false,
     };
 
     this.beatPulse = 0; // 0..1 from MusicEngine bass beat detector
@@ -39,79 +41,85 @@ export class LightingRig {
 
     this._initLights();
     this._initProceduralStudios();
+    this._initWindTunnelStreamlines();
     this.applyState(this.state);
   }
 
   _initLights() {
-    this.ambientLight = new THREE.HemisphereLight('#ffffff', '#0f172a', 1.1);
+    this.ambientLight = new THREE.HemisphereLight('#ffffff', '#030712', 0.45);
     this.lightsGroup.add(this.ambientLight);
 
-    this.keyLight = new THREE.DirectionalLight('#ffffff', 3.2);
+    // Primary Key Spotlight
+    this.keyLight = new THREE.DirectionalLight('#ffffff', 3.8);
     this.keyLight.castShadow = true;
     this.keyLight.shadow.mapSize.set(2048, 2048);
     this.keyLight.shadow.camera.near = 1;
-    this.keyLight.shadow.camera.far = 120;
-    const d = 24;
+    this.keyLight.shadow.camera.far = 140;
+    const d = 22;
     this.keyLight.shadow.camera.left = -d;
     this.keyLight.shadow.camera.right = d;
     this.keyLight.shadow.camera.top = d;
     this.keyLight.shadow.camera.bottom = -d;
-    this.keyLight.shadow.bias = -0.0005;
+    this.keyLight.shadow.bias = -0.0004;
     this.lightsGroup.add(this.keyLight);
 
-    this.fillLight = new THREE.DirectionalLight('#60a5fa', 1.4);
-    this.fillLight.position.set(-18, 10, -12);
+    // Secondary Fill Light
+    this.fillLight = new THREE.DirectionalLight('#93c5fd', 1.6);
+    this.fillLight.position.set(-18, 12, -12);
     this.lightsGroup.add(this.fillLight);
 
-    this.rimLight = new THREE.SpotLight('#38bdf8', 2.8, 95, Math.PI / 3, 0.6, 1.0);
-    this.rimLight.position.set(0, 14, 24);
+    // Sharp Razor Rim Spotlight
+    this.rimLight = new THREE.SpotLight('#f8fafc', 3.5, 95, Math.PI / 3.2, 0.45, 1.0);
+    this.rimLight.position.set(0, 14, 22);
     this.lightsGroup.add(this.rimLight);
 
     // Moving overhead sweep softbox light for cinematic clearcoat highlights
-    this.sweepLight = new THREE.PointLight('#ffffff', 2.2, 35, 1.5);
-    this.sweepLight.position.set(0, 6.5, 0);
+    this.sweepLight = new THREE.PointLight('#ffffff', 2.8, 40, 1.6);
+    this.sweepLight.position.set(0, 7.5, 0);
     this.lightsGroup.add(this.sweepLight);
 
-    this.scene.fog = new THREE.FogExp2('#070b14', 0.004);
+    this.scene.fog = new THREE.FogExp2('#03060c', 0.005);
   }
 
   _initProceduralStudios() {
-    // 1. Wet Asphalt Dark Studio
+    // 1. Wet Obsidian Dark Studio (Automotive Blackout Stage)
     this.wetStudioGroup = new THREE.Group();
-    const floorGeo = new THREE.CircleGeometry(85, 64);
+    const floorGeo = new THREE.CircleGeometry(90, 64);
     this.studioFloorMat = new THREE.MeshStandardMaterial({
-      color: '#0b0f17',
-      roughness: 0.14,
-      metalness: 0.65,
+      color: '#05070d',
+      roughness: 0.08,
+      metalness: 0.92,
     });
     const floorMesh = new THREE.Mesh(floorGeo, this.studioFloorMat);
     floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.position.y = -0.001;
     floorMesh.receiveShadow = true;
     this.wetStudioGroup.add(floorMesh);
 
-    // Overhead studio softbox panels & neon rim pillars
-    const softboxGeo = new THREE.PlaneGeometry(5.5, 16);
+    // Overhead high-intensity studio softbox panel
+    const softboxGeo = new THREE.PlaneGeometry(6.5, 24);
     this.softboxMat = new THREE.MeshBasicMaterial({
       color: '#ffffff',
       side: THREE.DoubleSide,
     });
-    const softbox = new THREE.Mesh(softboxGeo, this.softboxMat);
-    softbox.rotation.x = Math.PI / 2;
-    softbox.position.set(0, 8.5, 0);
-    this.wetStudioGroup.add(softbox);
+    this.softboxMesh = new THREE.Mesh(softboxGeo, this.softboxMat);
+    this.softboxMesh.rotation.x = Math.PI / 2;
+    this.softboxMesh.position.set(0, 8.8, 0);
+    this.wetStudioGroup.add(this.softboxMesh);
 
+    // Twin vertical LED neon light pillars framing the background
     this.studioRimBars = [];
-    const barGeo = new THREE.CylinderGeometry(0.08, 0.08, 7.5, 12);
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2;
-      const r = 16.5;
+    const barGeo = new THREE.CylinderGeometry(0.06, 0.06, 9.5, 12);
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2;
+      const r = 18.0;
       const barMat = new THREE.MeshStandardMaterial({
         color: '#38bdf8',
         emissive: '#38bdf8',
-        emissiveIntensity: 2.5,
+        emissiveIntensity: 3.5,
       });
       const bar = new THREE.Mesh(barGeo, barMat);
-      bar.position.set(Math.cos(angle) * r, 3.75, Math.sin(angle) * r);
+      bar.position.set(Math.cos(angle) * r, 4.75, Math.sin(angle) * r);
       this.wetStudioGroup.add(bar);
       this.studioRimBars.push(bar);
     }
@@ -121,11 +129,11 @@ export class LightingRig {
     // 2. Cyberpunk Neon Speed Tunnel
     this.cyberTunnelGroup = new THREE.Group();
     const tunnelFloor = new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 220),
+      new THREE.PlaneGeometry(28, 220),
       new THREE.MeshStandardMaterial({
-        color: '#060812',
-        roughness: 0.08,
-        metalness: 0.85,
+        color: '#03050a',
+        roughness: 0.06,
+        metalness: 0.94,
       })
     );
     tunnelFloor.rotation.x = -Math.PI / 2;
@@ -133,14 +141,14 @@ export class LightingRig {
     this.cyberTunnelGroup.add(tunnelFloor);
 
     this.tunnelArches = [];
-    const archGeo = new THREE.TorusGeometry(11.5, 0.14, 12, 48, Math.PI);
+    const archGeo = new THREE.TorusGeometry(11.5, 0.15, 12, 48, Math.PI);
     for (let i = 0; i < 24; i++) {
       const isCyan = i % 2 === 0;
       const col = isCyan ? '#00f5d4' : '#ff007f';
       const archMat = new THREE.MeshStandardMaterial({
         color: col,
         emissive: col,
-        emissiveIntensity: 3.2,
+        emissiveIntensity: 4.0,
       });
       const arch = new THREE.Mesh(archGeo, archMat);
       arch.position.set(0, 0, -90 + i * 8.0);
@@ -194,9 +202,9 @@ export class LightingRig {
     const runwayFloor = new THREE.Mesh(
       new THREE.PlaneGeometry(48, 280),
       new THREE.MeshStandardMaterial({
-        color: '#0e131d',
-        roughness: 0.16,
-        metalness: 0.5,
+        color: '#050912',
+        roughness: 0.12,
+        metalness: 0.75,
       })
     );
     runwayFloor.rotation.x = -Math.PI / 2;
@@ -204,7 +212,7 @@ export class LightingRig {
     this.runwayGroup.add(runwayFloor);
 
     this.runwayStrobes = [];
-    const strobeGeo = new THREE.SphereGeometry(0.16, 8, 8);
+    const strobeGeo = new THREE.SphereGeometry(0.18, 8, 8);
     for (let z = -120; z <= 120; z += 8) {
       // Green centerline lights
       const centerMat = new THREE.MeshBasicMaterial({ color: '#22c55e' });
@@ -225,27 +233,104 @@ export class LightingRig {
     this.scene.add(this.runwayGroup);
   }
 
+  /**
+   * High-Speed Aerodynamic Smoke Streamlines for the Wind Tunnel
+   */
+  _initWindTunnelStreamlines() {
+    this.windTunnelGroup = new THREE.Group();
+    this.windTunnelGroup.name = 'WindTunnelStreamlinesGroup';
+
+    // 14 animated particle streamlines flowing from front to back over the car body
+    this.streamlines = [];
+    const particleCount = 75;
+    const numLines = 14;
+
+    const streamGeo = new THREE.BufferGeometry();
+    const positions = new Float32Array(numLines * particleCount * 3);
+    const alphas = new Float32Array(numLines * particleCount);
+
+    this.streamlineData = [];
+    for (let line = 0; line < numLines; line++) {
+      const xOffset = ((line - (numLines - 1) / 2) / numLines) * 2.8;
+      const yOffset = 0.45 + (Math.abs(line - numLines / 2) / (numLines / 2)) * 0.55;
+      this.streamlineData.push({
+        x: xOffset,
+        yBase: yOffset,
+        speed: 18.0 + Math.random() * 4.0,
+        phase: Math.random() * 10.0,
+      });
+    }
+
+    streamGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    streamGeo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+
+    const streamMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: `
+        attribute float alpha;
+        varying float vAlpha;
+        void main() {
+          vAlpha = alpha;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = (18.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        varying float vAlpha;
+        void main() {
+          float dist = length(gl_PointCoord - vec2(0.5));
+          if (dist > 0.5) discard;
+          float intensity = smoothstep(0.5, 0.05, dist);
+          vec3 col = mix(vec3(0.0, 0.95, 0.85), vec3(1.0, 1.0, 1.0), intensity * 0.6);
+          gl_FragColor = vec4(col, intensity * vAlpha * 0.85);
+        }
+      `,
+    });
+
+    this.streamlineParticles = new THREE.Points(streamGeo, streamMat);
+    this.windTunnelGroup.add(this.streamlineParticles);
+    this.windTunnelGroup.visible = false;
+    this.scene.add(this.windTunnelGroup);
+  }
+
   setActiveProceduralScene(sceneId) {
-    this.wetStudioGroup.visible = sceneId === 'wet_studio';
+    this.wetStudioGroup.visible = sceneId === 'wet_studio' || sceneId === 'dark_void';
     this.cyberTunnelGroup.visible = sceneId === 'cyberpunk_tunnel';
     this.cloudDeckGroup.visible = sceneId === 'cloud_deck';
     this.runwayGroup.visible = sceneId === 'night_runway';
+    this.windTunnelGroup.visible = sceneId === 'wind_tunnel';
 
-    if (sceneId === 'cloud_deck') {
+    if (sceneId === 'dark_void') {
+      this.scene.background = new THREE.Color('#010204');
+      this.scene.fog.color.set('#010204');
+      this.scene.fog.density = 0.008;
+      this.ambientLight.intensity = 0.15; // Inky black void
+      this.keyLight.intensity = 4.2;
+      this.rimLight.intensity = 4.5;
+    } else if (sceneId === 'wind_tunnel') {
+      this.scene.background = new THREE.Color('#020409');
+      this.scene.fog.color.set('#040813');
+      this.scene.fog.density = 0.006;
+      this.ambientLight.intensity = 0.35;
+      this.keyLight.intensity = 3.6;
+    } else if (sceneId === 'cloud_deck') {
       this.scene.background = new THREE.Color('#0c4a6e');
       this.scene.fog.color.set('#38bdf8');
       this.scene.fog.density = 0.0035;
     } else if (sceneId === 'cyberpunk_tunnel') {
-      this.scene.background = new THREE.Color('#05050b');
-      this.scene.fog.color.set('#090614');
+      this.scene.background = new THREE.Color('#020308');
+      this.scene.fog.color.set('#060410');
       this.scene.fog.density = 0.008;
     } else if (sceneId === 'night_runway') {
-      this.scene.background = new THREE.Color('#040710');
-      this.scene.fog.color.set('#060b16');
+      this.scene.background = new THREE.Color('#02040a');
+      this.scene.fog.color.set('#040812');
       this.scene.fog.density = 0.006;
     } else if (sceneId !== 'outdoor_world') {
-      this.scene.background = new THREE.Color('#070a12');
-      this.scene.fog.color.set('#070a12');
+      this.scene.background = new THREE.Color('#03060c');
+      this.scene.fog.color.set('#03060c');
       this.scene.fog.density = this.state.fogDensity;
     }
   }
@@ -279,12 +364,17 @@ export class LightingRig {
 
     this.ambientLight.color.set('#ffffff');
     this.ambientLight.groundColor.set(s.ambientColor);
-    this.ambientLight.intensity = s.ambientIntensity;
+    this.ambientLight.intensity = s.blackoutMode ? 0.05 : s.ambientIntensity;
 
     this.renderer.toneMappingExposure = s.exposure;
 
     if (this.studioFloorMat) {
-      this.studioFloorMat.roughness = THREE.MathUtils.clamp(1.0 - s.floorWetness * 0.9, 0.04, 0.85);
+      this.studioFloorMat.roughness = THREE.MathUtils.clamp(1.0 - s.floorWetness * 0.94, 0.04, 0.85);
+    }
+
+    if (this.softboxMat) {
+      const bri = s.softboxIntensity || 4.5;
+      this.softboxMat.color.setRGB(bri, bri, bri);
     }
 
     this.studioRimBars.forEach((bar, idx) => {
@@ -314,15 +404,67 @@ export class LightingRig {
     if (this.state.lightSweep) {
       this.sweepLight.position.z = Math.sin(elapsed * 1.1) * 9.0;
       this.sweepLight.position.x = Math.cos(elapsed * 0.7) * 3.5;
-      this.sweepLight.intensity = 1.8 + this.beatPulse * 2.5;
+      this.sweepLight.intensity = 2.4 + this.beatPulse * 2.8;
     } else {
       this.sweepLight.intensity = 0;
     }
 
     // 2. Beat-sync pulse on rim light & studio neon bars
-    this.rimLight.intensity = this.state.rimIntensity + this.beatPulse * 2.8;
+    this.rimLight.intensity = this.state.rimIntensity + this.beatPulse * 3.0;
 
-    // 3. Animate Cyberpunk Tunnel arches if visible
+    // 3. Update aerodynamic streamlines in Wind Tunnel
+    if (this.windTunnelGroup.visible) {
+      const posAttr = this.streamlineParticles.geometry.attributes.position;
+      const alphaAttr = this.streamlineParticles.geometry.attributes.alpha;
+      const posArray = posAttr.array;
+      const alphaArray = alphaAttr.array;
+
+      const particleCount = 75;
+      let ptr = 0;
+      let aPtr = 0;
+
+      for (let line = 0; line < this.streamlineData.length; line++) {
+        const lineData = this.streamlineData[line];
+        const x = lineData.x;
+
+        for (let p = 0; p < particleCount; p++) {
+          const t = (elapsed * lineData.speed * 0.2 + (p / particleCount) * 16.0 + lineData.phase) % 18.0;
+          const z = 9.0 - t; // Flows from front (+Z) to back (-Z)
+
+          // Aerodynamic curve over car profile (hood, windshield, roof, rear diffuser)
+          let y = lineData.yBase;
+          if (z > 1.8 && z <= 5.0) {
+            // Over hood
+            y += Math.sin(((5.0 - z) / 3.2) * Math.PI * 0.5) * 0.45;
+          } else if (z > -0.5 && z <= 1.8) {
+            // Over windshield
+            y += 0.45 + ((1.8 - z) / 2.3) * 0.65;
+          } else if (z > -2.2 && z <= -0.5) {
+            // Over roof
+            y += 1.1 + Math.sin(((z + 0.5) / 1.7) * Math.PI) * 0.15;
+          } else if (z <= -2.2) {
+            // Down rear deck & diffuser wake
+            y += Math.max(0.2, 1.1 - (( -2.2 - z) / 6.0) * 0.8);
+          }
+
+          posArray[ptr] = x + Math.sin(z * 0.4 + elapsed) * 0.08;
+          posArray[ptr + 1] = y;
+          posArray[ptr + 2] = z;
+
+          // Fade in at front and fade out into fan
+          const alpha = Math.sin((t / 18.0) * Math.PI);
+          alphaArray[aPtr] = Math.max(0.0, alpha);
+
+          ptr += 3;
+          aPtr += 1;
+        }
+      }
+
+      posAttr.needsUpdate = true;
+      alphaAttr.needsUpdate = true;
+    }
+
+    // 4. Animate Cyberpunk Tunnel arches
     if (this.cyberTunnelGroup.visible && speedActive) {
       for (let i = 0; i < this.tunnelArches.length; i++) {
         const arch = this.tunnelArches[i];
@@ -331,7 +473,7 @@ export class LightingRig {
       }
     }
 
-    // 4. Animate Flight Cloud Deck if visible
+    // 5. Animate Flight Cloud Deck
     if (this.cloudDeckGroup.visible) {
       for (let i = 0; i < this.flightClouds.length; i++) {
         const c = this.flightClouds[i];
@@ -340,7 +482,7 @@ export class LightingRig {
       }
     }
 
-    // 5. Animate Runway sequential approach strobes
+    // 6. Animate Runway approach strobes
     if (this.runwayGroup.visible) {
       for (let i = 0; i < this.runwayStrobes.length; i++) {
         const item = this.runwayStrobes[i];
