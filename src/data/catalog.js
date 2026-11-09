@@ -1,7 +1,18 @@
 // Complete catalog of 16 Cars, 2 Planes, 10 Scenes, 6 Weather States, 10 Camera Moves, and 40 Music Tracks
 
-const BASE = (import.meta.env.BASE_URL || './').replace(/\/$/, '');
-export const assetUrl = (relPath) => `${BASE}/${relPath.replace(/^\//, '')}`;
+const IS_DEV = import.meta.env.DEV;
+const GITHUB_RAW_ROOT = 'https://raw.githubusercontent.com/SREphoto/3d-car-and-plane-scene-generator/main/3D%20Car%20and%20Plane%20Scene%20Creator';
+
+export const assetUrl = (relPath) => {
+  if (IS_DEV) {
+    return `/${relPath.replace(/^\//, '')}`;
+  }
+  // Strip leading 'assets/' or '/'
+  const clean = relPath.replace(/^\/?assets\//, '').replace(/^\//, '');
+  // Encode each segment properly so spaces like 'British Airways Boeing 747-400.glb' work seamlessly
+  const encodedSegments = clean.split('/').map((seg) => encodeURIComponent(seg)).join('/');
+  return `${GITHUB_RAW_ROOT}/${encodedSegments}`;
+};
 
 export const CARS_CATALOG = [
   {
@@ -626,7 +637,7 @@ export const MUSIC_CATALOG = RAW_MUSIC_FILES.map((file, idx) => {
     id: `track-${idx + 1}`,
     title,
     file,
-    url: assetUrl(`assets/Music/${encodeURIComponent(file)}`),
+    url: assetUrl(`assets/Music/${file}`),
     vibe: vibes[idx % vibes.length],
   };
 });

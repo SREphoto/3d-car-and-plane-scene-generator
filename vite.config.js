@@ -70,54 +70,6 @@ function serveWorkspaceAssetsPlugin() {
     configurePreviewServer(server) {
       attachMiddleware(server.middlewares);
     },
-    closeBundle() {
-      // Copy needed GLB models and MP3 soundtracks to dist/assets during build
-      const outDir = path.resolve(process.cwd(), 'dist', 'assets');
-      console.log('\n[build] Copying GLBs and MP3s to dist/assets for GitHub Pages...');
-
-      function copyRecursive(src, dst, filter) {
-        if (!fs.existsSync(src)) return;
-        const stat = fs.statSync(src);
-        if (stat.isDirectory()) {
-          fs.readdirSync(src).forEach((child) => {
-            copyRecursive(path.join(src, child), path.join(dst, child), filter);
-          });
-        } else if (filter(src)) {
-          fs.mkdirSync(path.dirname(dst), { recursive: true });
-          fs.copyFileSync(src, dst);
-        }
-      }
-
-      // 1. Cars .glb files
-      copyRecursive(
-        path.join(ASSETS_ROOT, 'Cars'),
-        path.join(outDir, 'Cars'),
-        (p) => p.endsWith('.glb')
-      );
-
-      // 2. Planes .glb files
-      copyRecursive(
-        path.join(ASSETS_ROOT, 'Planes'),
-        path.join(outDir, 'Planes'),
-        (p) => p.endsWith('.glb')
-      );
-
-      // 3. Locations .glb files
-      copyRecursive(
-        path.join(ASSETS_ROOT, 'Locations'),
-        path.join(outDir, 'Locations'),
-        (p) => p.endsWith('.glb')
-      );
-
-      // 4. Music .mp3 files
-      copyRecursive(
-        path.join(ASSETS_ROOT, 'Music'),
-        path.join(outDir, 'Music'),
-        (p) => p.endsWith('.mp3')
-      );
-
-      console.log('[build] Assets copy complete!\n');
-    },
   };
 }
 
