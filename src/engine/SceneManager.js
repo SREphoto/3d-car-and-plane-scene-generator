@@ -308,14 +308,17 @@ export class SceneManager {
               }
             });
 
-            // The turntable floor 'Sol' in Blender is ALREADY at Y = 0.000!
+            // The turntable floor 'Sol' is level at Y = 0.000
             locGroup = new THREE.Group();
             rawLoc.scale.setScalar(0.42);
             rawLoc.position.set(0, 0, 0);
             locGroup.add(rawLoc);
             this.locationCache.set(sceneItem.id, locGroup);
           } else if (sceneItem.id === 'interior_7') {
-            // Architectural Loft Hall: Floor-to-ceiling glass wall at X = -3.32 with city skyline outside
+            // Architectural Loft Penthouse:
+            // Scaled by 1.65x so ceiling is a grand 5.7m and room is spacious.
+            // Placed so vehicle sits in the double-height panoramic window bay, framed by
+            // floor-to-ceiling glass on the left and skyline in front, completely clear of the mezzanine!
             rawLoc.traverse((child) => {
               if (child.isMesh) {
                 child.receiveShadow = true;
@@ -326,15 +329,21 @@ export class SceneManager {
                   const matName = (child.material?.name || '').toLowerCase();
                   // Polished architectural concrete/wood floor
                   if (mName === 'plane' || matName.includes('material.001')) {
-                    child.material.roughness = 0.18;
+                    child.material.roughness = 0.16;
                     child.material.metalness = 0.20;
-                    child.material.envMapIntensity = 2.4;
+                    child.material.envMapIntensity = 2.2;
                   }
-                  // Crystal clear optical glass windows looking out at city buildings
-                  if (mName.includes('plane.004') || matName.includes('material.029')) {
+                  // Crystal clear optical glass windows looking out at city skyline
+                  if (
+                    mName.includes('plane.004') ||
+                    mName.includes('cube029') ||
+                    mName.includes('cube030') ||
+                    matName.includes('material.029') ||
+                    matName.includes('material.003')
+                  ) {
                     child.material.transparent = true;
-                    child.material.opacity = 0.26;
-                    child.material.roughness = 0.03;
+                    child.material.opacity = 0.22;
+                    child.material.roughness = 0.02;
                     child.material.metalness = 0.1;
                     child.material.depthWrite = false;
                   }
@@ -342,21 +351,21 @@ export class SceneManager {
               }
             });
             locGroup = new THREE.Group();
-            rawLoc.scale.setScalar(1.0);
-            // In interior_7, floor Plane is level at Y = 0.000, centered at (0.72, 0, 0.18).
-            // Shifting by (-0.72, 0, -0.18) centers the loft showcase floor directly at (0,0,0)
-            // with vehicle wheels resting at Y = 0.000, glass wall at X = -3.32, and skyline towering outside!
-            rawLoc.position.set(-0.72, 0.0, -0.18);
+            rawLoc.scale.setScalar(1.65);
+            // Shifting by (-0.74, 0, 3.63) places the car at (0,0,0) directly beside the panoramic glass windows!
+            rawLoc.position.set(-0.74, 0.0, 3.63);
             locGroup.add(rawLoc);
             this.locationCache.set(sceneItem.id, locGroup);
           } else if (sceneItem.id === 'car_garage') {
-            // Underground Performance Garage
+            // Underground Performance Garage:
+            // Scaled by 1.55x (width 25.6m, depth 16m, height 7m).
+            // Pavement floor is at Y = 0.000 so car tires sit firmly on concrete (NO floating!).
             rawLoc.traverse((child) => {
               if (child.isMesh) {
                 child.receiveShadow = true;
                 child.castShadow = true;
                 if (child.material) {
-                  child.material.envMapIntensity = 1.3;
+                  child.material.envMapIntensity = 1.2;
                   if (child.name === 'Cube_3') {
                     child.material.roughness = 0.52;
                     child.material.metalness = 0.1;
@@ -365,10 +374,37 @@ export class SceneManager {
               }
             });
             locGroup = new THREE.Group();
-            rawLoc.scale.setScalar(1.0);
-            // Concrete floor slab Cube_3 top surface is at Y = 0.870.
-            // Shifting Y by -0.870 aligns top of concrete floor slab perfectly to Y = 0.000 (no car clipping!)
-            rawLoc.position.set(1.189, -0.870, 0.0);
+            rawLoc.scale.setScalar(1.55);
+            // Center garage at (1.908, 0, 0) with floor flush at Y = 0.000
+            rawLoc.position.set(1.908, 0.0, 0.0);
+            locGroup.add(rawLoc);
+            this.locationCache.set(sceneItem.id, locGroup);
+          } else if (sceneItem.id === 'abandoned_vr_gallery') {
+            // Abandoned Concrete VR Gallery:
+            // Convert unlit MeshBasicMaterial to MeshStandardMaterial so baked concrete textures
+            // respond realistically to sunbeam shaft & scene lighting without washing out!
+            rawLoc.traverse((child) => {
+              if (child.isMesh) {
+                child.receiveShadow = true;
+                child.castShadow = true;
+                if (child.material) {
+                  const oldMat = child.material;
+                  child.material = new THREE.MeshStandardMaterial({
+                    map: oldMat.map || null,
+                    roughness: 0.88,
+                    metalness: 0.04,
+                    envMapIntensity: 0.35,
+                  });
+                  if (oldMat.map) {
+                    oldMat.map.colorSpace = THREE.SRGBColorSpace;
+                  }
+                }
+              }
+            });
+            locGroup = new THREE.Group();
+            rawLoc.scale.setScalar(1.15);
+            // Center central gallery hall under the roof skylight beam directly at (0,0,0)
+            rawLoc.position.set(-5.60, 0.0, 8.56);
             locGroup.add(rawLoc);
             this.locationCache.set(sceneItem.id, locGroup);
           } else {
@@ -425,6 +461,10 @@ export class SceneManager {
     }
   }
 
+  applySceneFilmPreset(presetId) {
+    this.lightingRig.applySceneFilmPreset(presetId);
+  }
+
   // --- Real-Time Customization Handlers for UI ---
   setCarPaintColor(hex) {
     this.enhancer.setPaintColor(hex);
@@ -469,9 +509,9 @@ export class SceneManager {
       }
     }
 
-    // 2. Rotate Wind Tunnel Fan if in Wind Tunnel scene (aerodynamically correct rotation)
+    // 2. Rotate Wind Tunnel Fan if in Wind Tunnel scene (aerodynamically correct propeller rotation around its axle shaft)
     if (this.activeSceneId === 'wind_tunnel' && this.windTunnelFan) {
-      this.windTunnelFan.rotation.y -= dt * 18.0;
+      this.windTunnelFan.rotateX(-dt * 22.0);
     }
 
     // 3. Update Outdoor Weather & 24h Time-of-Day

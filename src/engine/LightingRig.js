@@ -1,16 +1,19 @@
 import * as THREE from 'three';
-import { createAutomotiveStudioScene } from './StudioEnvironment.js';
+import { createAutomotiveStudioScene, getEnvironmentSceneForSceneId } from './StudioEnvironment.js';
 
 export class LightingRig {
   constructor(scene, renderer) {
     this.scene = scene;
     this.renderer = renderer;
 
-    // Generate crisp HDR studio reflection environment for car paint, clearcoat & fuselage
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    pmremGenerator.compileEquirectangularShader();
+    // Cache of PMREM environment reflection maps tailored to each 3D location
+    this.pmremGenerator = new THREE.PMREMGenerator(renderer);
+    this.pmremGenerator.compileEquirectangularShader();
+    this.envCache = new Map();
+
     const studioEnvScene = createAutomotiveStudioScene();
-    this.envTexture = pmremGenerator.fromScene(studioEnvScene, 0.04).texture;
+    this.envTexture = this.pmremGenerator.fromScene(studioEnvScene, 0.04).texture;
+    this.envCache.set('dark_void', this.envTexture);
     this.scene.environment = this.envTexture;
     this.scene.environmentIntensity = 0.85;
 
@@ -296,6 +299,16 @@ export class LightingRig {
     this.scene.add(this.windTunnelGroup);
   }
 
+  getEnvironmentForScene(sceneId) {
+    if (this.envCache.has(sceneId)) {
+      return this.envCache.get(sceneId);
+    }
+    const envScene = getEnvironmentSceneForSceneId(sceneId);
+    const texture = this.pmremGenerator.fromScene(envScene, 0.04).texture;
+    this.envCache.set(sceneId, texture);
+    return texture;
+  }
+
   setActiveProceduralScene(sceneId) {
     this.currentSceneId = sceneId;
     this.wetStudioGroup.visible = sceneId === 'wet_studio' || sceneId === 'dark_void';
@@ -304,53 +317,274 @@ export class LightingRig {
     this.runwayGroup.visible = sceneId === 'night_runway';
     this.windTunnelGroup.visible = false; // Wind tunnel streamlines permanently disabled
 
+    // Dynamically bind matched PMREM environment reflection map so vehicle reflections mirror the scene perfectly
+    if (sceneId !== 'outdoor_world') {
+      const envTex = this.getEnvironmentForScene(sceneId);
+      this.scene.environment = envTex;
+    }
+
     if (sceneId === 'interior_7') {
-      // Natural architectural loft lighting with city skyline background
-      const skyCol = new THREE.Color('#384556');
+      // Natural architectural loft daylight with city skyline
+      const skyCol = new THREE.Color('#384659');
       this.scene.background = skyCol;
       if (this.scene.fog) {
         this.scene.fog.color.copy(skyCol);
-        this.scene.fog.density = 0.0004; // Crystal clear sightline to city buildings outside!
+        this.scene.fog.density = 0.0003; // Crystal clear sightline to city skyscrapers!
       }
-      this.ambientLight.intensity = 1.05;
+      this.scene.environmentIntensity = 1.35;
+      this.renderer.toneMappingExposure = 1.05;
+
+      this.ambientLight.color.set('#f1f5f9');
+      this.ambientLight.groundColor.set('#475569');
+      this.ambientLight.intensity = 1.15;
+
+      // Natural sunlight streaming in through the panoramic windows from (-14, 9.5, -9)
+      this.keyLight.color.set('#fffcf0');
       this.keyLight.intensity = 3.2;
-      this.keyLight.position.set(-16.0, 12.0, 4.0); // Natural sunlight streaming through glass from -X
+      this.keyLight.position.set(-14.0, 9.5, -9.0);
+
+      this.fillLight.color.set('#94a3b8');
+      this.fillLight.intensity = 0.75;
+      this.fillLight.position.set(12.0, 6.0, 8.0);
+
+      this.rimLight.color.set('#ffffff');
+      this.rimLight.intensity = 1.1;
+      this.rimLight.position.set(4.0, 8.0, 10.0);
+    } else if (sceneId === 'wind_tunnel') {
+      // Aerospace high-tech testing facility with aerodynamic specular rims
+      const bgCol = new THREE.Color('#020409');
+      this.scene.background = bgCol;
+      if (this.scene.fog) {
+        this.scene.fog.color.set('#030712');
+        this.scene.fog.density = 0.004;
+      }
+      this.scene.environmentIntensity = 1.15;
+      this.renderer.toneMappingExposure = 1.05;
+
+      this.ambientLight.color.set('#38bdf8');
+      this.ambientLight.groundColor.set('#0c1926');
+      this.ambientLight.intensity = 0.5;
+
+      this.keyLight.color.set('#f8fafc');
+      this.keyLight.intensity = 2.8;
+      this.keyLight.position.set(0, 10.0, -4.0);
+
+      this.rimLight.color.set('#06b6d4'); // Glowing aerodynamic cyan rim
+      this.rimLight.intensity = 2.4;
+      this.rimLight.position.set(-10.0, 6.0, 8.0);
+
+      this.fillLight.color.set('#38bdf8');
+      this.fillLight.intensity = 0.85;
+      this.fillLight.position.set(10.0, 5.0, 4.0);
+    } else if (sceneId === 'car_garage') {
+      // Underground performance tuner garage with overhead fluorescent bays
+      const bgCol = new THREE.Color('#05080f');
+      this.scene.background = bgCol;
+      if (this.scene.fog) {
+        this.scene.fog.color.set('#05080f');
+        this.scene.fog.density = 0.0025;
+      }
+      this.scene.environmentIntensity = 0.95;
+      this.renderer.toneMappingExposure = 1.0;
+
+      this.ambientLight.color.set('#e2e8f0');
+      this.ambientLight.groundColor.set('#0f172a');
+      this.ambientLight.intensity = 0.55;
+
+      // Overhead fluorescent bay light
+      this.keyLight.color.set('#f1f5f9');
+      this.keyLight.intensity = 2.4;
+      this.keyLight.position.set(0, 5.5, 0);
+
+      this.fillLight.color.set('#64748b');
+      this.fillLight.intensity = 0.65;
+      this.fillLight.position.set(-6.0, 3.0, 4.0);
+
+      this.rimLight.color.set('#cbd5e1');
+      this.rimLight.intensity = 1.1;
+      this.rimLight.position.set(0, 4.8, -5.0);
+    } else if (sceneId === 'abandoned_vr_gallery') {
+      // Brutalist concrete gallery: dramatic warm skylight beam + rich deep shadow contrast
+      const bgCol = new THREE.Color('#0a0e17');
+      this.scene.background = bgCol;
+      if (this.scene.fog) {
+        this.scene.fog.color.set('#0a0e17');
+        this.scene.fog.density = 0.0025;
+      }
+      this.scene.environmentIntensity = 0.85;
+      this.renderer.toneMappingExposure = 0.96; // Calibrated filmic exposure so baked textures do NOT wash out!
+
+      this.ambientLight.color.set('#cbd5e1');
+      this.ambientLight.groundColor.set('#18202c');
+      this.ambientLight.intensity = 0.35; // Rich filmic shadow depths
+
+      // Direct warm sunbeam shaft pouring through roof skylight directly onto car
+      this.keyLight.color.set('#fff4e0');
+      this.keyLight.intensity = 2.6;
+      this.keyLight.position.set(5.0, 14.0, -7.0);
+
+      this.fillLight.color.set('#334155');
+      this.fillLight.intensity = 0.45;
+      this.fillLight.position.set(-6.0, 4.0, 6.0);
+
+      this.rimLight.color.set('#94a3b8');
+      this.rimLight.intensity = 0.85;
+      this.rimLight.position.set(0, 8.0, 8.0);
     } else if (sceneId === 'dark_void') {
       this.scene.background = new THREE.Color('#010204');
       this.scene.fog.color.set('#010204');
       this.scene.fog.density = 0.008;
+      this.scene.environmentIntensity = 1.35;
+      this.renderer.toneMappingExposure = 1.15;
+
       this.ambientLight.intensity = 0.15; // Inky black void
       this.keyLight.intensity = 4.2;
       this.rimLight.intensity = 4.5;
-    } else if (sceneId === 'car_garage') {
-      this.scene.background = new THREE.Color('#05070d');
-      this.scene.fog.color.set('#05070d');
-      this.scene.fog.density = 0.003;
-      this.ambientLight.intensity = 0.55;
-      this.keyLight.intensity = 2.4;
-      this.keyLight.position.set(0, 4.2, 0); // Overhead fluorescent bay
-    } else if (sceneId === 'wind_tunnel') {
-      this.scene.background = new THREE.Color('#020409');
-      this.scene.fog.color.set('#040813');
-      this.scene.fog.density = 0.005;
-      this.ambientLight.intensity = 0.45;
-      this.keyLight.intensity = 3.6;
     } else if (sceneId === 'cloud_deck') {
       this.scene.background = new THREE.Color('#0c4a6e');
       this.scene.fog.color.set('#38bdf8');
       this.scene.fog.density = 0.0035;
+      this.renderer.toneMappingExposure = 1.1;
     } else if (sceneId === 'cyberpunk_tunnel') {
       this.scene.background = new THREE.Color('#020308');
       this.scene.fog.color.set('#060410');
       this.scene.fog.density = 0.008;
+      this.renderer.toneMappingExposure = 1.15;
     } else if (sceneId === 'night_runway') {
       this.scene.background = new THREE.Color('#02040a');
       this.scene.fog.color.set('#040812');
       this.scene.fog.density = 0.006;
+      this.renderer.toneMappingExposure = 1.1;
     } else if (sceneId !== 'outdoor_world') {
       this.scene.background = new THREE.Color('#03060c');
       this.scene.fog.color.set('#03060c');
       this.scene.fog.density = this.state.fogDensity;
+      this.renderer.toneMappingExposure = 1.05;
+    }
+  }
+
+  /**
+   * Applies scene-specific film presets (lighting moods tailored for each location)
+   */
+  applySceneFilmPreset(presetId) {
+    switch (presetId) {
+      // --- Loft Penthouse Presets ---
+      case 'loft_daylight':
+        this.keyLight.color.set('#fffcf0');
+        this.keyLight.intensity = 3.2;
+        this.keyLight.position.set(-14.0, 9.5, -9.0);
+        this.ambientLight.color.set('#f1f5f9');
+        this.ambientLight.intensity = 1.15;
+        this.scene.background = new THREE.Color('#384659');
+        this.scene.environmentIntensity = 1.35;
+        this.renderer.toneMappingExposure = 1.05;
+        break;
+      case 'loft_sunset':
+        this.keyLight.color.set('#ff9f43');
+        this.keyLight.intensity = 3.6;
+        this.keyLight.position.set(-18.0, 4.5, -12.0); // Low-angle golden sunbeam
+        this.ambientLight.color.set('#f472b6');
+        this.ambientLight.groundColor.set('#2e1065');
+        this.ambientLight.intensity = 0.85;
+        this.scene.background = new THREE.Color('#4c1d95');
+        this.scene.environmentIntensity = 1.25;
+        this.renderer.toneMappingExposure = 1.08;
+        break;
+      case 'loft_overcast':
+        this.keyLight.color.set('#cbd5e1');
+        this.keyLight.intensity = 2.4;
+        this.keyLight.position.set(-10.0, 12.0, -8.0);
+        this.ambientLight.color.set('#94a3b8');
+        this.ambientLight.intensity = 1.2;
+        this.scene.background = new THREE.Color('#475569');
+        this.scene.environmentIntensity = 1.1;
+        this.renderer.toneMappingExposure = 1.0;
+        break;
+      case 'loft_midnight':
+        this.keyLight.color.set('#06b6d4');
+        this.keyLight.intensity = 1.8;
+        this.keyLight.position.set(-14.0, 6.0, -10.0);
+        this.ambientLight.color.set('#1e1b4b');
+        this.ambientLight.intensity = 0.35;
+        this.rimLight.color.set('#ec4899');
+        this.rimLight.intensity = 1.8;
+        this.scene.background = new THREE.Color('#030712');
+        this.scene.environmentIntensity = 0.7;
+        this.renderer.toneMappingExposure = 1.12;
+        break;
+
+      // --- Wind Tunnel Presets ---
+      case 'wind_aero':
+        this.keyLight.color.set('#f8fafc');
+        this.keyLight.intensity = 2.8;
+        this.rimLight.color.set('#06b6d4');
+        this.rimLight.intensity = 2.4;
+        this.ambientLight.intensity = 0.5;
+        break;
+      case 'wind_cyan':
+        this.keyLight.color.set('#00f5d4');
+        this.keyLight.intensity = 3.0;
+        this.rimLight.color.set('#38bdf8');
+        this.rimLight.intensity = 3.0;
+        this.ambientLight.intensity = 0.4;
+        this.scene.background = new THREE.Color('#020617');
+        break;
+      case 'wind_stealth':
+        this.keyLight.color.set('#e2e8f0');
+        this.keyLight.intensity = 1.6;
+        this.rimLight.color.set('#ffffff');
+        this.rimLight.intensity = 3.5;
+        this.ambientLight.intensity = 0.15;
+        this.scene.background = new THREE.Color('#010204');
+        break;
+
+      // --- Underground Garage Presets ---
+      case 'garage_fluorescent':
+        this.keyLight.color.set('#f1f5f9');
+        this.keyLight.intensity = 2.4;
+        this.keyLight.position.set(0, 5.5, 0);
+        this.ambientLight.intensity = 0.55;
+        this.renderer.toneMappingExposure = 1.0;
+        break;
+      case 'garage_tuner':
+        this.keyLight.color.set('#38bdf8');
+        this.keyLight.intensity = 2.0;
+        this.rimLight.color.set('#f59e0b');
+        this.rimLight.intensity = 2.2;
+        this.ambientLight.intensity = 0.35;
+        break;
+      case 'garage_drama':
+        this.keyLight.color.set('#ffffff');
+        this.keyLight.intensity = 3.4;
+        this.keyLight.position.set(0, 5.0, 0);
+        this.ambientLight.intensity = 0.18;
+        this.rimLight.intensity = 2.8;
+        break;
+
+      // --- Concrete Gallery Presets ---
+      case 'gallery_sunshaft':
+        this.keyLight.color.set('#fff4e0');
+        this.keyLight.intensity = 2.8;
+        this.keyLight.position.set(5.0, 14.0, -7.0);
+        this.ambientLight.intensity = 0.35;
+        this.renderer.toneMappingExposure = 0.96;
+        break;
+      case 'gallery_brutalist':
+        this.keyLight.color.set('#e2e8f0');
+        this.keyLight.intensity = 1.8;
+        this.ambientLight.intensity = 0.28;
+        this.renderer.toneMappingExposure = 0.94;
+        break;
+      case 'gallery_goldendust':
+        this.keyLight.color.set('#f59e0b');
+        this.keyLight.intensity = 3.2;
+        this.keyLight.position.set(8.0, 8.0, -10.0);
+        this.ambientLight.intensity = 0.38;
+        this.renderer.toneMappingExposure = 1.0;
+        break;
+
+      default:
+        break;
     }
   }
 

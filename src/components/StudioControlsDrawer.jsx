@@ -27,6 +27,7 @@ import {
 import {
   WEATHER_PRESETS,
   LIGHTING_PRESETS,
+  SCENE_FILM_PRESETS,
   CAMERA_SHOTS,
   CAR_PAINT_COLORS,
   CAR_PAINT_FINISHES,
@@ -64,6 +65,8 @@ export function StudioControlsDrawer({
   lightingState,
   onChangeLightingState,
   onApplyLightingPreset,
+  activeSceneId,
+  onApplySceneFilmPreset,
   dynamicsState,
   onChangeDynamicsState,
   // Paint & Shading
@@ -100,7 +103,29 @@ export function StudioControlsDrawer({
   const minutes = Math.floor((timeOfDay - hours) * 60);
   const timeFormatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 
-  const availableShots = CAMERA_SHOTS.filter((s) => s.modes.includes(mode));
+  const activeScenePresets =
+    activeSceneId && SCENE_FILM_PRESETS[activeSceneId]
+      ? SCENE_FILM_PRESETS[activeSceneId]
+      : null;
+
+  const availableShots = [...CAMERA_SHOTS]
+    .filter((s) => s.modes.includes(mode))
+    .sort((a, b) => {
+      // Prioritize shots tailored to the active scene
+      const aMatch =
+        (activeSceneId === 'interior_7' && a.id.startsWith('loft_')) ||
+        (activeSceneId === 'car_garage' && a.id.startsWith('garage_')) ||
+        (activeSceneId === 'abandoned_vr_gallery' && a.id.startsWith('gallery_')) ||
+        (activeSceneId === 'wind_tunnel' && a.id.startsWith('wind_'));
+      const bMatch =
+        (activeSceneId === 'interior_7' && b.id.startsWith('loft_')) ||
+        (activeSceneId === 'car_garage' && b.id.startsWith('garage_')) ||
+        (activeSceneId === 'abandoned_vr_gallery' && b.id.startsWith('gallery_')) ||
+        (activeSceneId === 'wind_tunnel' && b.id.startsWith('wind_'));
+      if (aMatch && !bMatch) return -1;
+      if (!aMatch && bMatch) return 1;
+      return 0;
+    });
 
   const handleAddClip = () => {
     const nextShot =
@@ -284,6 +309,81 @@ export function StudioControlsDrawer({
         {/* ================= TAB: LIGHTING & CINEMATIC FX ================= */}
         {activeTab === 'lighting' && (
           <>
+            {/* Location-Specific Matched Film Moods */}
+            {activeScenePresets && activeScenePresets.length > 0 && (
+              <div
+                style={{
+                  background: 'linear-gradient(180deg, rgba(14, 165, 233, 0.08), rgba(15, 23, 42, 0.4))',
+                  padding: '14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#38bdf8',
+                    marginBottom: '10px',
+                    letterSpacing: '0.6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Sparkles size={14} color="#38bdf8" />
+                  <span>LOCATION FILM MOODS (MATCHED LIGHTING)</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {activeScenePresets.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => onApplySceneFilmPreset && onApplySceneFilmPreset(p.id)}
+                      style={{
+                        padding: '10px 12px',
+                        background: 'rgba(15, 23, 42, 0.8)',
+                        border: '1px solid rgba(56, 189, 248, 0.2)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#38bdf8';
+                        e.currentTarget.style.background = 'rgba(14, 165, 233, 0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.2)';
+                        e.currentTarget.style.background = 'rgba(15, 23, 42, 0.8)';
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 700, color: '#ffffff' }}>{p.name}</span>
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 800,
+                            padding: '2px 6px',
+                            background: 'rgba(56, 189, 248, 0.2)',
+                            color: '#38bdf8',
+                            borderRadius: '4px',
+                            letterSpacing: '0.4px',
+                          }}
+                        >
+                          {p.badge}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>{p.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Dark & Moody Presets */}
             <div>
               <div

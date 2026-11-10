@@ -277,6 +277,12 @@ export default function App() {
     }
   };
 
+  const handleApplySceneFilmPreset = (presetId) => {
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.applySceneFilmPreset(presetId);
+    }
+  };
+
   const handleChangeDynamicsState = (partial) => {
     const updated = { ...dynamicsState, ...partial };
     setDynamicsState(updated);
@@ -583,6 +589,8 @@ export default function App() {
         lightingState={lightingState}
         onChangeLightingState={handleChangeLightingState}
         onApplyLightingPreset={handleApplyLightingPreset}
+        activeSceneId={activeScene?.id}
+        onApplySceneFilmPreset={handleApplySceneFilmPreset}
         dynamicsState={dynamicsState}
         onChangeDynamicsState={handleChangeDynamicsState}
         // Paint & Shading
