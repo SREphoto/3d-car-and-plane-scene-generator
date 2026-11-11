@@ -196,14 +196,16 @@ export function ModelBrowserDrawer({
                 style={{
                   padding: '12px 14px',
                   background: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'var(--bg-card)',
-                  border: `1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                  borderTop: `1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                  borderRight: `1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                  borderBottom: `1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                  borderLeft: `4px solid ${item.accent || 'var(--accent-cyan)'}`,
                   borderRadius: 'var(--radius-md)',
                   cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
                   transition: 'all 0.15s ease',
-                  borderLeft: `4px solid ${item.accent || 'var(--accent-cyan)'}`,
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

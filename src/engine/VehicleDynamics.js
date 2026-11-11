@@ -16,13 +16,13 @@ export class VehicleDynamics {
       planeStrobes: true,
     };
 
-    this.wheelMeshes = [];
-    this.currentMode = 'cars'; // 'cars' | 'planes'
+    this.spinnableWheels = [];
+    this.currentMode = 'cars'; // 'cars' | 'planes' | 'parts'
     this.subjectRoot = null;
+    this.subjectHolder = null;
     this.bounds = { w: 2.2, h: 1.4, d: 4.8 };
 
     this._buildHeadlightsAndStrobes();
-    this._buildAeroStreamlines();
     this._buildPlaneContrails();
   }
 
@@ -30,10 +30,9 @@ export class VehicleDynamics {
     this.lightsRig = new THREE.Group();
     this.fxGroup.add(this.lightsRig);
 
-    // Front left & right automotive headlight spotlights
-    // Natural 5500K Xenon/LED projection onto the pavement with smooth penumbra
-    this.headlightL = new THREE.SpotLight('#f8fafc', 2.8, 38, Math.PI / 5.5, 0.65, 1.8);
-    this.headlightR = new THREE.SpotLight('#f8fafc', 2.8, 38, Math.PI / 5.5, 0.65, 1.8);
+    // Front left & right automotive headlight spotlights (5600K LED/Xenon road throw)
+    this.headlightL = new THREE.SpotLight('#f8fafc', 3.4, 42, Math.PI / 5.2, 0.65, 1.6);
+    this.headlightR = new THREE.SpotLight('#f8fafc', 3.4, 42, Math.PI / 5.2, 0.65, 1.6);
     this.headlightL.castShadow = true;
     this.headlightR.castShadow = true;
     this.headlightL.shadow.mapSize.set(512, 512);
@@ -52,9 +51,9 @@ export class VehicleDynamics {
     this.headlightL.target = this.headlightTargetL;
     this.headlightR.target = this.headlightTargetR;
 
-    // Subtle rear taillight ground bounce illumination (soft ambient red glow on asphalt, no crude polygon boxes)
-    this.taillightL = new THREE.PointLight('#dc2626', 0.6, 3.2, 2.0);
-    this.taillightR = new THREE.PointLight('#dc2626', 0.6, 3.2, 2.0);
+    // Subtle rear taillight ground bounce illumination
+    this.taillightL = new THREE.PointLight('#dc2626', 0.75, 3.6, 2.0);
+    this.taillightR = new THREE.PointLight('#dc2626', 0.75, 3.6, 2.0);
     this.lightsRig.add(this.taillightL, this.taillightR);
 
     // Plane Wingtip Navigation Lights (Port Red, Starboard Green, Strobe White)
@@ -79,32 +78,6 @@ export class VehicleDynamics {
     );
   }
 
-  _buildAeroStreamlines() {
-    this.streamlinesGroup = new THREE.Group();
-    this.streamlineMeshes = [];
-    this.fxGroup.add(this.streamlinesGroup);
-
-    const numLines = 13;
-    for (let i = 0; i < numLines; i++) {
-      const pts = [];
-      for (let j = 0; j < 40; j++) {
-        pts.push(new THREE.Vector3(0, 1, (j / 39 - 0.5) * 12));
-      }
-      const curve = new THREE.CatmullRomCurve3(pts);
-      const geo = new THREE.TubeGeometry(curve, 48, 0.022, 6, false);
-      const mat = new THREE.MeshBasicMaterial({
-        color: i % 3 === 0 ? '#38bdf8' : '#e0f2fe',
-        transparent: true,
-        opacity: 0.55,
-        depthWrite: false,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      this.streamlinesGroup.add(mesh);
-      this.streamlineMeshes.push({ mesh, index: i, total: numLines });
-    }
-    this.streamlinesGroup.visible = false;
-  }
-
   _buildPlaneContrails() {
     this.contrailsGroup = new THREE.Group();
     this.fxGroup.add(this.contrailsGroup);
@@ -114,8 +87,8 @@ export class VehicleDynamics {
     this.contrailData = [];
 
     for (let i = 0; i < count; i++) {
-      const streamIdx = i % 4; // 4 engine / wingtip emitters
-      const progress = (i / count);
+      const streamIdx = i % 4;
+      const progress = i / count;
       this.contrailData.push({ streamIdx, progress });
       positions[i * 3] = 0;
       positions[i * 3 + 1] = 1;
@@ -147,27 +120,38 @@ export class VehicleDynamics {
     this.contrailsGroup.visible = false;
   }
 
-  bindSubject(subjectRoot, mode, bounds) {
+  bindSubject(subjectRoot, mode, bounds, subjectHolder = null) {
     this.subjectRoot = subjectRoot;
+    this.subjectHolder = subjectHolder;
     this.currentMode = mode;
     this.bounds = bounds || { w: 2.2, h: 1.4, d: 4.8 };
-    this.wheelMeshes = [];
+    this.spinnableWheels = [];
 
     if (!subjectRoot) return;
 
-    // Detect wheel / tire / rim meshes heuristically for rotation
+    // Only spin individual wheel/tire meshes whose local geometry pivot is centered at the hub
+    // (prevents Ferris-wheel orbiting on merged chassis-origin wheel meshes)
+    const tmpBox = new THREE.Box3();
+    const tmpCenter = new THREE.Vector3();
+    const tmpSize = new THREE.Vector3();
     subjectRoot.traverse((obj) => {
-      if (obj.isMesh) {
+      if (obj.isMesh && obj.geometry) {
         const n = (obj.name || '').toLowerCase();
-        const p = (obj.parent?.name || '').toLowerCase();
-        if (
-          n.includes('wheel') ||
-          n.includes('tire') ||
-          n.includes('tyre') ||
-          n.includes('rim') ||
-          p.includes('wheel')
-        ) {
-          this.wheelMeshes.push(obj);
+        if (n.includes('steering')) return;
+        if (n.includes('wheel') || n.includes('tire') || n.includes('tyre') || n.includes('rim')) {
+          obj.geometry.computeBoundingBox();
+          if (obj.geometry.boundingBox) {
+            tmpBox.copy(obj.geometry.boundingBox);
+            tmpBox.getCenter(tmpCenter);
+            tmpBox.getSize(tmpSize);
+            // Hub-centered single wheel check: local geometry center near (0,0,0) and width < 45% of car
+            if (tmpCenter.length() < Math.max(tmpSize.y, tmpSize.z) * 0.18 && tmpSize.x < this.bounds.w * 0.45) {
+              this.spinnableWheels.push({
+                mesh: obj,
+                radius: Math.max(0.24, Math.max(tmpSize.y, tmpSize.z) * 0.5),
+              });
+            }
+          }
         }
       }
     });
@@ -178,69 +162,55 @@ export class VehicleDynamics {
     const rearZ = d * 0.47;
     const lightY = Math.max(0.42, h * 0.38);
 
-    // Position headlights & taillights relative to normalized subject bounds
+    // Position headlights & taillights in subjectHolder's local canonical (-Z forward) frame
     this.headlightL.position.set(halfW, lightY, frontZ);
     this.headlightR.position.set(-halfW, lightY, frontZ);
-    this.headlightTargetL.position.set(halfW * 1.05, 0.05, frontZ - 20);
-    this.headlightTargetR.position.set(-halfW * 1.05, 0.05, frontZ - 20);
+    this.headlightTargetL.position.set(halfW * 1.05, 0.02, frontZ - 22);
+    this.headlightTargetR.position.set(-halfW * 1.05, 0.02, frontZ - 22);
 
-    // Position soft taillight ground bounce
-    this.taillightL.position.set(halfW * 0.85, Math.max(0.2, lightY * 0.7), rearZ + 0.35);
-    this.taillightR.position.set(-halfW * 0.85, Math.max(0.2, lightY * 0.7), rearZ + 0.35);
+    this.taillightL.position.set(halfW * 0.85, Math.max(0.22, lightY * 0.7), rearZ + 0.35);
+    this.taillightR.position.set(-halfW * 0.85, Math.max(0.22, lightY * 0.7), rearZ + 0.35);
 
-    // Position Plane wingtip navigation lights
+    // Plane wingtip navigation lights (Port = Left -X Red, Starboard = Right +X Green in -Z forward frame)
     const wingTipX = w * 0.49;
     const wingTipY = h * 0.44;
     const wingTipZ = d * 0.06;
-    this.navPort.position.set(wingTipX, wingTipY, wingTipZ);
+    this.navPort.position.set(-wingTipX, wingTipY, wingTipZ);
     this.navPortMesh.position.copy(this.navPort.position);
-    this.strobeWingL.position.set(wingTipX, wingTipY + 0.08, wingTipZ + 0.2);
+    this.strobeWingL.position.set(-wingTipX, wingTipY + 0.08, wingTipZ + 0.2);
 
-    this.navStarboard.position.set(-wingTipX, wingTipY, wingTipZ);
+    this.navStarboard.position.set(wingTipX, wingTipY, wingTipZ);
     this.navStarboardMesh.position.copy(this.navStarboard.position);
-    this.strobeWingR.position.set(-wingTipX, wingTipY + 0.08, wingTipZ + 0.2);
+    this.strobeWingR.position.set(wingTipX, wingTipY + 0.08, wingTipZ + 0.2);
 
     this.strobeTail.position.set(0, h * 0.92, d * 0.48);
-
-    this.rebuildStreamlineCurves(0);
   }
 
-  rebuildStreamlineCurves(elapsed) {
-    const { w, h, d } = this.bounds;
-    this.streamlineMeshes.forEach(({ mesh, index, total }) => {
-      const frac = index / (total - 1) - 0.5; // -0.5 .. +0.5
-      const xBase = frac * w * 0.78;
-      const pts = [];
-      for (let j = 0; j < 36; j++) {
-        const u = j / 35; // 0 (in front at -Z) to 1 (behind at +Z)
-        const z = (u - 0.5) * d * 1.65;
-        // Arch smoothly over the car/plane profile
-        const bodyEnvelope = Math.exp(-Math.pow((u - 0.52) / 0.26, 2));
-        const centerLift = (1.0 - Math.abs(frac) * 1.15) * h * 0.95 * bodyEnvelope;
-        const wave = Math.sin(u * 14.0 - elapsed * 9.0 + index) * 0.045;
-        const y = Math.max(0.18, 0.35 + centerLift + wave);
-        const x = xBase * (1.0 + bodyEnvelope * 0.12) + Math.cos(u * 10.0 - elapsed * 7.0) * 0.03;
-        pts.push(new THREE.Vector3(x, y, z));
-      }
-      const curve = new THREE.CatmullRomCurve3(pts);
-      mesh.geometry.dispose();
-      mesh.geometry = new THREE.TubeGeometry(curve, 40, 0.02, 5, false);
-    });
+  setHeadlights(enabled) {
+    this.state.headlightsOn = Boolean(enabled);
   }
 
   applyState(partial) {
     this.state = { ...this.state, ...partial };
   }
 
-  update(dt, elapsed, roadTexture, activeSceneId) {
+  update(dt, elapsed, roadTexture, activeSceneId, driveSpeed = 0) {
     const s = this.state;
     const isPlane = this.currentMode === 'planes';
+    const isPart = this.currentMode === 'parts';
+
+    // Synchronize FX group pose with movable subjectHolder so lights & contrails move with the vehicle!
+    if (this.subjectHolder) {
+      this.fxGroup.position.copy(this.subjectHolder.position);
+      this.fxGroup.quaternion.copy(this.subjectHolder.quaternion);
+    }
 
     // 1. Headlights & Taillights visibility
-    this.headlightL.visible = s.headlightsOn;
-    this.headlightR.visible = s.headlightsOn;
-    this.taillightL.visible = s.headlightsOn && !isPlane;
-    this.taillightR.visible = s.headlightsOn && !isPlane;
+    const showCarLights = s.headlightsOn && !isPart;
+    this.headlightL.visible = showCarLights;
+    this.headlightR.visible = showCarLights;
+    this.taillightL.visible = showCarLights && !isPlane;
+    this.taillightR.visible = showCarLights && !isPlane;
 
     const showPlaneLights = isPlane && s.planeStrobes;
     this.navPort.visible = showPlaneLights;
@@ -248,7 +218,6 @@ export class VehicleDynamics {
     this.navPortMesh.visible = showPlaneLights;
     this.navStarboardMesh.visible = showPlaneLights;
 
-    // Double-flash aviation anti-collision strobe pattern
     const strobeCycle = elapsed % 1.4;
     const strobeOn =
       showPlaneLights &&
@@ -257,17 +226,23 @@ export class VehicleDynamics {
     this.strobeWingL.visible = strobeOn;
     this.strobeWingR.visible = strobeOn;
 
-    // 2. Road texture scroll when wheelSpin / motion is active
-    if (s.wheelSpin && roadTexture) {
+    // 2. Road texture scroll + hub-centered wheel spin
+    if (s.wheelSpin && roadTexture && activeSceneId === 'outdoor_world') {
       roadTexture.offset.y -= dt * 3.6;
+    }
+
+    if (!isPlane && !isPart && Math.abs(driveSpeed) > 0.03 && this.spinnableWheels.length > 0) {
+      for (const w of this.spinnableWheels) {
+        w.mesh.rotateX(-(driveSpeed / w.radius) * dt);
+      }
     }
 
     // 3. Plane Banking & Pitch Dynamics
     if (this.subjectRoot) {
-      if (isPlane && s.planeBanking) {
+      if (isPlane && s.planeBanking && activeSceneId === 'cloud_deck') {
         const roll = Math.sin(elapsed * 0.85) * 0.14;
-        const pitch = Math.sin(elapsed * 0.55) * 0.045 + (activeSceneId === 'cloud_deck' ? 0.05 : 0);
-        const bobY = activeSceneId === 'cloud_deck' ? 1.8 + Math.sin(elapsed * 1.1) * 0.35 : 0;
+        const pitch = Math.sin(elapsed * 0.55) * 0.045 + 0.05;
+        const bobY = 1.8 + Math.sin(elapsed * 1.1) * 0.35;
         this.subjectRoot.rotation.z = roll;
         this.subjectRoot.rotation.x = pitch;
         this.subjectRoot.position.y = bobY;
@@ -281,11 +256,11 @@ export class VehicleDynamics {
       }
     }
 
-    // 4. Aero Wind Tunnel Streamlines (permanently disabled)
-    this.streamlinesGroup.visible = false;
-
-    // 5. Plane Jet Engine & Wingtip Contrails
-    const showContrails = isPlane && s.planeContrails;
+    // 4. Plane Jet Engine & Wingtip Contrails (only in flight scenes or when airborne)
+    const isAirborne =
+      activeSceneId === 'cloud_deck' ||
+      (this.subjectHolder && this.subjectHolder.position.y > 0.75);
+    const showContrails = isPlane && s.planeContrails && isAirborne;
     this.contrailsGroup.visible = showContrails;
     if (showContrails) {
       const { w, h, d } = this.bounds;
@@ -296,6 +271,7 @@ export class VehicleDynamics {
         new THREE.Vector3(-w * 0.48, h * 0.44, d * 0.14),
       ];
       const pos = this.contrailPoints.geometry.attributes.position;
+      const rootBob = this.subjectRoot ? this.subjectRoot.position.y : 0;
       for (let i = 0; i < this.contrailData.length; i++) {
         const item = this.contrailData[i];
         item.progress = (item.progress + dt * 0.65) % 1.0;
@@ -303,10 +279,7 @@ export class VehicleDynamics {
         const em = emitters[item.streamIdx];
         const spread = p * 1.25;
         const x = em.x + Math.sin(elapsed * 4.0 + i) * spread * 0.35;
-        const y =
-          em.y +
-          (this.subjectRoot ? this.subjectRoot.position.y : 0) +
-          Math.cos(elapsed * 3.0 + i) * spread * 0.25;
+        const y = em.y + rootBob + Math.cos(elapsed * 3.0 + i) * spread * 0.25;
         const z = em.z + p * d * 1.8;
         pos.setXYZ(i, x, y, z);
       }

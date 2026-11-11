@@ -1,17 +1,62 @@
 import * as THREE from 'three';
 
+// Strict token boundary helpers so 'light' never matches 'flight', 'cf' never matches 'rcf',
+// and 'ext' never matches 'texture'.
+const TOKEN_SPLIT_RE = /[^a-z0-9]+/i;
+
+function hasAnyToken(str, tokens) {
+  const parts = str.toLowerCase().split(TOKEN_SPLIT_RE).filter(Boolean);
+  for (const p of parts) {
+    if (tokens.has(p)) return true;
+  }
+  return false;
+}
+
+function hasSubstring(str, subs) {
+  const s = str.toLowerCase();
+  for (const sub of subs) {
+    if (s.includes(sub)) return true;
+  }
+  return false;
+}
+
+const DECAL_TOKENS = new Set([
+  'decal', 'decals', 'sticker', 'stickers', 'sponsor', 'sponsors',
+  'badge', 'badges', 'emblem', 'logo', 'logos', 'numberplate', 'plate', 'banner',
+]);
+
+const GLASS_TOKENS = new Set([
+  'glass', 'glasses', 'window', 'windows', 'windshield', 'windscreen',
+  'vitre', 'canopy', 'visor', 'hud',
+]);
+
+const LIGHT_GLASS_SUBS = ['lightglass', 'light_glass', 'headlight_glass', 'lens_glass', 'glass_light'];
+
+const LIGHT_EMITTER_TOKENS = new Set([
+  'headlight', 'headlights', 'taillight', 'taillights', 'emissive',
+  'drl', 'led', 'leds', 'glow', 'glows', 'lamp', 'lamps', 'brakelight', 'turnsignal',
+]);
+
+const CARBON_TOKENS = new Set(['carbon', 'carbonfiber', 'cf', 'kevlar']);
+const TIRE_TOKENS = new Set(['tire', 'tires', 'tyre', 'tyres', 'rubber', 'gomma', 'tread', 'proxes']);
+const RIM_TOKENS = new Set(['rim', 'rims', 'alloy', 'bbs', 'spoke', 'rotor', 'disc', 'diskbrake', 'caliper', 'calliper', 'exhaust', 'chrome']);
+const INTERIOR_TOKENS = new Set([
+  'interior', 'int', 'cockpit', 'seat', 'seats', 'belt', 'cinture', 'carpet',
+  'steering', 'dashboard', 'dash', 'cab', 'cabin', 'alcantara', 'leather',
+]);
+
+const BODY_TOKENS = new Set([
+  'body', 'carpaint', 'paint', 'exterior', 'hood', 'bonnet', 'door', 'doors',
+  'fender', 'bumper', 'trunk', 'boot', 'roof', 'quarter', 'sidepanel',
+  'monocoque', 'fuselage', 'livery', 'skin',
+]);
+
 /**
  * CarMaterialEnhancer:
- * Transforms flat, low-poly, chalky GLB exports into AAA photorealistic automotive studio materials:
- * - Upgrades body paint to MeshPhysicalMaterial with wet clearcoat, metallic flakes, and deep reflections
- * - Upgrades glass to optical automotive glass with transmission, refraction, and tint
- * - Upgrades alloy rims to mirror-forged chrome/satin aluminum
- * - Upgrades tires to rich carbon-black matte rubber
- * - Upgrades carbon fiber components to gloss clearcoat carbon weave
- * - Upgrades lights/DRLs to glowing HDR emissives
- * - Injects high-resolution soft contact shadows directly beneath the wheels & chassis
- * - Projects forward headlight beams onto the road/floor
- * - Projects chassis underglow neon onto the floor
+ * Upgrades vehicle and aircraft GLB materials into physically accurate clearcoated PBR shaders
+ * while strictly preserving embedded racing liveries, sponsor decal alpha layers, tire/wheel maps,
+ * and optical glass transparency. Also attaches a real directional ShadowMaterial ground catcher
+ * plus tight under-chassis/tire ambient occlusion contact shadows.
  */
 export class CarMaterialEnhancer {
   constructor() {
@@ -20,26 +65,62 @@ export class CarMaterialEnhancer {
     this.wheelMaterials = [];
     this.lightMaterials = [];
 
-    this.currentPaintColor = '#b91c1c'; // Default Rosso Corsa
-    this.currentFinish = 'metallic'; // 'metallic', 'matte', 'candy', 'carbon'
+    this.currentPaintColor = '#b91c1c';
+    this.currentFinish = 'metallic'; // 'metallic' | 'matte' | 'candy' | 'carbon'
     this.customPaintActive = false;
 
     this.contactShadowMesh = null;
-    this.headlightProjectors = null;
+    this.directionalShadowMesh = null;
     this.underglowLight = null;
     this.headlightsActive = true;
-    this.underglowActive = true;
-    this.underglowColor = '#00f5d4'; // Cyan neon
+    this.underglowActive = false; // Off by default for natural photorealism!
+    this.underglowColor = '#00f5d4';
   }
 
   /**
-   * Scans and enhances every material in the loaded vehicle or plane model.
+   * Copies PBR texture channels safely onto an upgraded material.
+   */
+  _copyMaps(src, dst) {
+    if (!src || !dst) return;
+    const mapKeys = [
+      'map',
+      'normalMap',
+      'roughnessMap',
+      'metalnessMap',
+      'aoMap',
+      'alphaMap',
+      'emissiveMap',
+      'bumpMap',
+    ];
+    for (const k of mapKeys) {
+      if (src[k]) {
+        dst[k] = src[k];
+      }
+    }
+    if (src.normalScale && dst.normalScale) {
+      dst.normalScale.copy(src.normalScale);
+    }
+    if (src.map) {
+      src.map.colorSpace = THREE.SRGBColorSpace;
+    }
+    if (src.emissiveMap) {
+      src.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+    }
+    if (src.vertexColors) {
+      dst.vertexColors = true;
+    }
+    dst.side = src.side ?? THREE.FrontSide;
+  }
+
+  /**
+   * Scans and enhances every material in the loaded vehicle, aircraft, or part model.
    */
   enhance(rootGroup, mode = 'cars', bounds = { w: 2.1, h: 1.3, d: 4.8 }) {
     this.bodyMaterials = [];
     this.glassMaterials = [];
     this.wheelMaterials = [];
     this.lightMaterials = [];
+    this.customPaintActive = false;
 
     rootGroup.traverse((child) => {
       if (!child.isMesh) return;
@@ -48,189 +129,340 @@ export class CarMaterialEnhancer {
       child.receiveShadow = true;
 
       const meshName = (child.name || '').toLowerCase();
+      const parentName = (child.parent?.name || '').toLowerCase();
       const mats = Array.isArray(child.material) ? child.material : [child.material];
 
       const upgradedMats = mats.map((mat) => {
+        const matName = (mat?.name || '').toLowerCase();
+        const combined = `${parentName} ${meshName} ${matName}`;
+
+        // Handle meshes exported with null material slots
         if (!mat) {
-          // If a mesh has no material assigned, provide a rich automotive body / trim physical material
-          const isWheel = meshName.includes('wheel') || meshName.includes('rim');
-          const isTire = meshName.includes('tire') || meshName.includes('tyre') || meshName.includes('rubber');
-          const isGlass = meshName.includes('glass') || meshName.includes('window') || meshName.includes('windshield');
-          if (isGlass) {
+          if (hasAnyToken(combined, GLASS_TOKENS) || hasSubstring(combined, LIGHT_GLASS_SUBS)) {
             const gm = new THREE.MeshPhysicalMaterial({
               color: new THREE.Color('#0f172a'),
-              roughness: 0.02,
-              metalness: 0.1,
-              transmission: 0.85,
+              roughness: 0.03,
+              metalness: 0.05,
+              transmission: 0.82,
+              ior: 1.52,
               transparent: true,
-              opacity: 0.35,
+              opacity: 0.36,
+              envMapIntensity: 2.2,
               depthWrite: false,
             });
             this.glassMaterials.push(gm);
             return gm;
           }
-          if (isTire) {
+          if (hasAnyToken(combined, TIRE_TOKENS)) {
             return new THREE.MeshStandardMaterial({
-              color: new THREE.Color('#111318'),
-              roughness: 0.82,
-              metalness: 0.05,
+              color: new THREE.Color('#141619'),
+              roughness: 0.85,
+              metalness: 0.04,
             });
           }
-          if (isWheel) {
+          if (hasAnyToken(combined, RIM_TOKENS) || (combined.includes('wheel') && !combined.includes('steering'))) {
+            const isCaliper = combined.includes('caliper') || combined.includes('calliper');
             return new THREE.MeshStandardMaterial({
-              color: new THREE.Color('#94a3b8'),
-              metalness: 0.92,
-              roughness: 0.18,
+              color: isCaliper ? new THREE.Color('#dc2626') : new THREE.Color('#cbd5e1'),
+              metalness: isCaliper ? 0.45 : 0.88,
+              roughness: isCaliper ? 0.2 : 0.16,
+              envMapIntensity: 2.0,
             });
           }
+          if (hasAnyToken(combined, LIGHT_EMITTER_TOKENS)) {
+            const isRear = combined.includes('rear') || combined.includes('tail') || combined.includes('back');
+            const lightCol = isRear ? new THREE.Color('#dc2626') : new THREE.Color('#f8fafc');
+            const lm = new THREE.MeshStandardMaterial({
+              color: lightCol,
+              emissive: lightCol,
+              emissiveIntensity: this.headlightsActive ? (isRear ? 1.1 : 1.3) : 0.0,
+              roughness: 0.15,
+              metalness: 0.1,
+            });
+            this.lightMaterials.push({ mat: lm, isRear, color: lightCol });
+            return lm;
+          }
+          if (hasAnyToken(combined, CARBON_TOKENS) || combined.includes('plastic') || combined.includes('grill') || combined.includes('details')) {
+            return new THREE.MeshPhysicalMaterial({
+              color: new THREE.Color('#181b20'),
+              roughness: 0.32,
+              metalness: 0.2,
+              clearcoat: 0.5,
+              clearcoatRoughness: 0.15,
+            });
+          }
+          const origCol = new THREE.Color('#cbd5e1');
           const defaultBody = new THREE.MeshPhysicalMaterial({
-            color: new THREE.Color(this.currentPaintColor || '#1e293b'),
-            roughness: 0.16,
-            metalness: 0.85,
-            clearcoat: 0.85,
-            clearcoatRoughness: 0.08,
-            envMapIntensity: 2.2,
+            color: origCol.clone(),
+            roughness: 0.18,
+            metalness: 0.55,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.04,
+            envMapIntensity: 1.8,
           });
-          this.bodyMaterials.push(defaultBody);
+          this.bodyMaterials.push({
+            origMat: null,
+            origColor: origCol,
+            origMap: null,
+            origMetalness: 0.55,
+            origRoughness: 0.18,
+            hasLiveryTexture: false,
+            paintMat: defaultBody,
+          });
           return defaultBody;
         }
-        const matName = (mat.name || '').toLowerCase();
-        const combined = `${meshName} ${matName}`;
 
-        // 1. GLASS & WINDSHIELDS
+        const isAlphaOverlay =
+          Boolean(mat.transparent && mat.opacity < 0.999) ||
+          Boolean(mat.transparent && mat.map) ||
+          mat.alphaTest > 0 ||
+          Boolean(mat.alphaMap);
+
+        // 0. TRANSPARENT DECALS / SPONSOR STICKERS / BADGES (MUST preserve alpha & never be overwritten by paint!)
         if (
-          combined.includes('glass') ||
-          combined.includes('window') ||
-          combined.includes('windshield') ||
-          combined.includes('cockpit') ||
-          combined.includes('vitre')
+          hasAnyToken(combined, DECAL_TOKENS) ||
+          (isAlphaOverlay &&
+            !hasAnyToken(combined, GLASS_TOKENS) &&
+            !hasSubstring(combined, LIGHT_GLASS_SUBS))
         ) {
+          const decalMat = new THREE.MeshPhysicalMaterial({
+            color: mat.color ? mat.color.clone() : new THREE.Color('#ffffff'),
+            roughness: Math.min(mat.roughness ?? 0.2, 0.25),
+            metalness: Math.min(mat.metalness ?? 0.08, 0.2),
+            clearcoat: 0.9,
+            clearcoatRoughness: 0.05,
+            transparent: Boolean(mat.transparent || mat.alphaMap),
+            opacity: mat.opacity ?? 1.0,
+            alphaTest: mat.alphaTest ?? 0,
+            depthWrite: mat.alphaTest > 0 ? true : false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+            envMapIntensity: 1.5,
+          });
+          this._copyMaps(mat, decalMat);
+          child.castShadow = false; // Transparent decal sheets shouldn't cast double-shadows onto body
+          return decalMat;
+        }
+
+        // 1. OPTICAL GLASS, WINDSHIELDS, CANOPIES & CLEAR HEADLIGHT COVERS
+        if (
+          hasSubstring(combined, LIGHT_GLASS_SUBS) ||
+          (hasAnyToken(combined, GLASS_TOKENS) && !hasAnyToken(combined, INTERIOR_TOKENS))
+        ) {
+          // If textured windshield banner / HUD / baked window frame map exists, preserve its map!
+          if (mat.map) {
+            const texGlass = new THREE.MeshPhysicalMaterial({
+              color: mat.color ? mat.color.clone() : new THREE.Color('#ffffff'),
+              roughness: 0.05,
+              metalness: 0.1,
+              clearcoat: 1.0,
+              clearcoatRoughness: 0.02,
+              transparent: true,
+              opacity: mat.transparent ? Math.max(0.42, mat.opacity ?? 0.65) : 0.72,
+              envMapIntensity: 2.2,
+              depthWrite: false,
+            });
+            this._copyMaps(mat, texGlass);
+            this.glassMaterials.push(texGlass);
+            return texGlass;
+          }
+
           const glassMat = new THREE.MeshPhysicalMaterial({
-            color: new THREE.Color('#0f172a'),
-            roughness: 0.02,
-            metalness: 0.1,
-            transmission: 0.82,
+            color: new THREE.Color('#0b1322'),
+            roughness: 0.03,
+            metalness: 0.08,
+            transmission: 0.78,
             ior: 1.52,
             transparent: true,
-            opacity: 0.38,
-            envMapIntensity: 3.2,
+            opacity: 0.42,
+            envMapIntensity: 2.4,
             depthWrite: false,
           });
           this.glassMaterials.push(glassMat);
           return glassMat;
         }
 
-        // 2. LIGHTS, HEADLIGHTS, TAILLIGHTS, DRLs
-        if (
-          combined.includes('light') ||
-          combined.includes('lamp') ||
-          combined.includes('headlight') ||
-          combined.includes('taillight') ||
-          combined.includes('emissive') ||
-          combined.includes('led') ||
-          combined.includes('lens')
-        ) {
-          const isRear = combined.includes('rear') || combined.includes('tail') || combined.includes('third');
-          const lightCol = isRear ? new THREE.Color('#d90429') : new THREE.Color('#f8fafc');
+        // 2. HEADLIGHTS, TAILLIGHTS, DRLs & EMISSIVES (only genuine light emitters, never 'flight'!)
+        const hasExistingEmissive =
+          Boolean(mat.emissiveMap) ||
+          (mat.emissive && (mat.emissive.r + mat.emissive.g + mat.emissive.b > 0.15));
 
-          const lightMat = new THREE.MeshStandardMaterial({
-            color: lightCol,
-            emissive: lightCol,
-            emissiveIntensity: this.headlightsActive ? (isRear ? 0.75 : 0.85) : 0.0,
-            roughness: 0.2,
+        if (
+          mode !== 'planes' &&
+          (hasAnyToken(combined, LIGHT_EMITTER_TOKENS) || hasExistingEmissive) &&
+          !hasAnyToken(combined, INTERIOR_TOKENS)
+        ) {
+          const isRear =
+            combined.includes('rear') ||
+            combined.includes('tail') ||
+            combined.includes('brake') ||
+            combined.includes('stop') ||
+            combined.includes('red');
+          const defaultCol = isRear ? new THREE.Color('#dc2626') : new THREE.Color('#f8fafc');
+          const baseCol = mat.map ? new THREE.Color('#ffffff') : (mat.color ? mat.color.clone() : defaultCol);
+          const emitCol = mat.emissiveMap
+            ? new THREE.Color('#ffffff')
+            : isRear
+            ? new THREE.Color('#ef4444')
+            : new THREE.Color('#f8fafc');
+
+          const lightMat = new THREE.MeshPhysicalMaterial({
+            color: baseCol,
+            emissive: emitCol,
+            emissiveIntensity: this.headlightsActive ? (isRear ? 0.95 : 1.1) : 0.0,
+            roughness: 0.12,
             metalness: 0.1,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.03,
+            envMapIntensity: 1.8,
           });
-          this.lightMaterials.push({ mat: lightMat, isRear, color: lightCol });
+          this._copyMaps(mat, lightMat);
+          this.lightMaterials.push({ mat: lightMat, isRear, color: emitCol });
           return lightMat;
         }
 
-        // 3. CARBON FIBER COMPONENTS
-        if (combined.includes('carbon') || combined.includes('cf') || combined.includes('diffuser') || combined.includes('splitter')) {
+        // 3. INTERIOR / COCKPIT / STEERING WHEEL (preserve authentic dark cabin materials)
+        if (hasAnyToken(combined, INTERIOR_TOKENS)) {
+          if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
+            mat.envMapIntensity = 0.65;
+            if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+          }
+          return mat;
+        }
+
+        // 4. CARBON FIBER / SPLITTER / DIFFUSER
+        if (
+          hasAnyToken(combined, CARBON_TOKENS) ||
+          combined.includes('diffuser') ||
+          combined.includes('splitter')
+        ) {
           const carbonMat = new THREE.MeshPhysicalMaterial({
-            color: new THREE.Color('#14171c'),
-            roughness: 0.2,
-            metalness: 0.25,
+            color: mat.map ? new THREE.Color('#ffffff') : new THREE.Color('#16191f'),
+            roughness: mat.roughnessMap ? (mat.roughness ?? 0.24) : 0.22,
+            metalness: 0.22,
             clearcoat: 0.85,
-            clearcoatRoughness: 0.12,
-            envMapIntensity: 2.2,
+            clearcoatRoughness: 0.1,
+            envMapIntensity: 1.6,
           });
-          if (mat.map) carbonMat.map = mat.map;
+          this._copyMaps(mat, carbonMat);
           return carbonMat;
         }
 
-        // 4. TIRES / RUBBER
-        if (combined.includes('tyre') || combined.includes('tire') || combined.includes('rubber')) {
+        // 5. TIRES & RUBBER TREADS (preserve Toyo/Pirelli/Michelin sidewall textures!)
+        if (hasAnyToken(combined, TIRE_TOKENS)) {
           const tireMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color('#101216'),
-            roughness: 0.86,
+            color: mat.map ? new THREE.Color('#ffffff') : new THREE.Color('#14161a'),
+            roughness: mat.roughnessMap ? Math.max(0.65, mat.roughness ?? 0.85) : 0.84,
             metalness: 0.04,
+            envMapIntensity: 0.55,
           });
-          if (mat.map) tireMat.map = mat.map;
+          this._copyMaps(mat, tireMat);
           return tireMat;
         }
 
-        // 5. WHEELS, RIMS, BRAKE ROTORS, CHROME EXHAUSTS
+        // 6. RIMS, BRAKE ROTORS, CALIPERS & EXHAUST TIPS (preserve BBS/forged wheel textures!)
         if (
-          combined.includes('wheel') ||
-          combined.includes('rim') ||
-          combined.includes('rotor') ||
-          combined.includes('disc') ||
-          combined.includes('caliper') ||
-          combined.includes('exhaust') ||
-          combined.includes('chrome')
+          hasAnyToken(combined, RIM_TOKENS) ||
+          (combined.includes('wheel') && !combined.includes('steering'))
         ) {
-          const isCaliper = combined.includes('caliper');
+          const isCaliper = combined.includes('caliper') || combined.includes('calliper');
+          // If wheel has a texture map (often combined wheel + tire sidewall or center cap), preserve its map!
+          if (mat.map) {
+            const texRim = new THREE.MeshPhysicalMaterial({
+              color: new THREE.Color('#ffffff'),
+              metalness: mat.metalnessMap ? (mat.metalness ?? 0.6) : 0.45,
+              roughness: mat.roughnessMap ? (mat.roughness ?? 0.28) : 0.26,
+              clearcoat: 0.6,
+              clearcoatRoughness: 0.12,
+              envMapIntensity: 1.7,
+            });
+            this._copyMaps(mat, texRim);
+            this.wheelMaterials.push(texRim);
+            return texRim;
+          }
+
           const rimMat = new THREE.MeshStandardMaterial({
-            color: isCaliper ? new THREE.Color('#dc2626') : new THREE.Color('#e2e8f0'),
-            metalness: isCaliper ? 0.45 : 0.96,
-            roughness: isCaliper ? 0.15 : 0.08,
-            envMapIntensity: 3.5,
+            color: isCaliper
+              ? (mat.color ? mat.color.clone() : new THREE.Color('#dc2626'))
+              : (mat.color && (mat.color.r + mat.color.g + mat.color.b > 0.12)
+                  ? mat.color.clone()
+                  : new THREE.Color('#cbd5e1')),
+            metalness: isCaliper ? 0.45 : 0.88,
+            roughness: isCaliper ? 0.18 : 0.15,
+            envMapIntensity: 2.1,
           });
+          this._copyMaps(mat, rimMat);
           this.wheelMaterials.push(rimMat);
           return rimMat;
         }
 
-        // 6. EXTERIOR BODY PAINT / CHASSIS / LIVERY
-        if (
-          mode === 'cars' &&
-          (combined.includes('chassis') ||
-            combined.includes('paint') ||
-            combined.includes('body') ||
-            combined.includes('exterior') ||
-            combined.includes('carpaint') ||
-            combined.includes('base') ||
-            combined.includes('ext') ||
-            combined.includes('hood') ||
-            combined.includes('door') ||
-            combined.includes('trunk') ||
-            combined.includes('wing') ||
-            combined.includes('amr26') ||
-            combined.includes('a525') ||
-            combined.includes('f40') ||
-            combined.includes('gt3'))
-        ) {
+        // 7. EXTERIOR AUTOMOTIVE / AIRCRAFT PAINT & RACING LIVERIES
+        const isBodyCandidate =
+          hasAnyToken(combined, BODY_TOKENS) ||
+          (mode === 'cars' &&
+            (combined.includes('paint') ||
+              combined.includes('shell') ||
+              combined.includes('chass') ||
+              combined.includes('template_icon') ||
+              combined.includes('amr26') ||
+              combined.includes('a525') ||
+              combined.includes('r26') ||
+              combined.includes('f40') ||
+              combined.includes('gt3') ||
+              combined.includes('kop_body')));
+
+        if (isBodyCandidate) {
+          const hasLivery = Boolean(mat.map);
+          const origColor = hasLivery
+            ? new THREE.Color('#ffffff')
+            : mat.color
+            ? mat.color.clone()
+            : new THREE.Color('#b91c1c');
+
+          // CRITICAL FIX FOR LIVERIES & PAINT:
+          // Textured racing liveries use dielectric basecoat (low metalness ~0.12) + 1.0 physical clearcoat
+          // so 100% of diffuse colors, stripes, and sponsor logos render vividly instead of turning dark chrome!
+          const origMetalness = hasLivery
+            ? (mat.metalnessMap ? Math.min(mat.metalness ?? 0.35, 0.45) : 0.12)
+            : Math.min(Math.max(mat.metalness ?? 0.55, 0.35), 0.72);
+          const origRoughness = hasLivery
+            ? (mat.roughnessMap ? Math.min(mat.roughness ?? 0.28, 0.38) : 0.18)
+            : 0.16;
+
           const paintMat = new THREE.MeshPhysicalMaterial({
-            color: mat.color ? mat.color.clone() : new THREE.Color('#b91c1c'),
-            metalness: 0.82,
-            roughness: 0.12,
-            clearcoat: 1.0,
-            clearcoatRoughness: 0.03,
-            reflectivity: 0.9,
-            envMapIntensity: 2.8,
+            color: origColor.clone(),
+            metalness: origMetalness,
+            roughness: origRoughness,
+            clearcoat: mode === 'planes' ? 0.75 : 1.0,
+            clearcoatRoughness: mode === 'planes' ? 0.08 : 0.04,
+            ior: 1.5,
+            envMapIntensity: mode === 'planes' ? 1.45 : 1.85,
           });
-          if (mat.map) {
-            paintMat.map = mat.map;
-            // For textured liveries (F1, GT3 sponsors), keep base map while imparting high-gloss clearcoat
-            paintMat.color = new THREE.Color('#ffffff');
-          }
-          this.bodyMaterials.push({ origMat: mat, paintMat });
+          this._copyMaps(mat, paintMat);
+
+          this.bodyMaterials.push({
+            origMat: mat,
+            origColor: origColor.clone(),
+            origMap: mat.map || null,
+            origMetalness,
+            origRoughness,
+            hasLiveryTexture: hasLivery,
+            paintMat,
+          });
           return paintMat;
         }
 
-        // Default fallback: ensure material has rich environment reflections
+        // 8. DEFAULT PRESERVATION: Keep original textures & colors crisp, never crush albedo!
         if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
-          mat.envMapIntensity = 2.0;
-          if (mat.roughness > 0.45) mat.roughness = 0.35;
+          if (mat.map) {
+            mat.map.colorSpace = THREE.SRGBColorSpace;
+            // Prevent unmapped metallic=1.0 exports from turning diffuse textures black
+            if (!mat.metalnessMap && mat.metalness > 0.55) {
+              mat.metalness = 0.18;
+            }
+          }
+          mat.envMapIntensity = mode === 'planes' ? 1.35 : 1.55;
         }
         return mat;
       });
@@ -238,16 +470,18 @@ export class CarMaterialEnhancer {
       child.material = Array.isArray(child.material) ? upgradedMats : upgradedMats[0];
     });
 
-    // Create high-resolution soft contact shadow directly under wheels & chassis
+    // Ground contact shadows + real directional shadow-catcher
     this.createContactShadow(rootGroup, bounds, mode);
 
-    // Create underglow lighting
+    // Subtle optional underglow (OFF by default)
     this.createUnderglow(rootGroup, bounds, mode);
   }
 
   /**
-   * Generates a 1024x1024 soft blurred ambient occlusion contact shadow plane
-   * anchored directly beneath the vehicle at Y = 0.002
+   * Creates:
+   * 1) A real THREE.ShadowMaterial ground shadow-catcher so directional sun/streetlights cast
+   *    accurate vehicle silhouettes even onto unlit photogrammetry streets (LA Night, Vatican, etc.)
+   * 2) A tight, realistic under-chassis & 4-wheel ambient occlusion contact shadow
    */
   createContactShadow(rootGroup, bounds, mode) {
     if (this.contactShadowMesh) {
@@ -256,43 +490,69 @@ export class CarMaterialEnhancer {
       this.contactShadowMesh.material.dispose();
       this.contactShadowMesh = null;
     }
+    if (this.directionalShadowMesh) {
+      this.directionalShadowMesh.removeFromParent();
+      this.directionalShadowMesh.geometry.dispose();
+      this.directionalShadowMesh.material.dispose();
+      this.directionalShadowMesh = null;
+    }
 
+    // 1. Real Directional Shadow-Catcher Disc
+    const catcherRadius = Math.max(bounds.w, bounds.d) * 1.65;
+    const catcherGeo = new THREE.CircleGeometry(catcherRadius, 48);
+    const catcherMat = new THREE.ShadowMaterial({
+      opacity: 0.44,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -6,
+    });
+    this.directionalShadowMesh = new THREE.Mesh(catcherGeo, catcherMat);
+    this.directionalShadowMesh.name = 'VehicleDirectionalShadowCatcher';
+    this.directionalShadowMesh.rotation.x = -Math.PI / 2;
+    this.directionalShadowMesh.position.set(0, 0.006, 0);
+    this.directionalShadowMesh.receiveShadow = true;
+    this.directionalShadowMesh.renderOrder = 0;
+    rootGroup.add(this.directionalShadowMesh);
+
+    // 2. Soft Under-Chassis & Tire Contact AO Shadow
     const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 1024;
+    canvas.width = 512;
+    canvas.height = 512;
     const ctx = canvas.getContext('2d');
 
-    // Soft chassis shadow gradient
-    const cx = 512;
-    const cy = 512;
-    const grad = ctx.createRadialGradient(cx, cy, 60, cx, cy, 460);
-    grad.addColorStop(0.0, 'rgba(0, 0, 0, 0.95)');
-    grad.addColorStop(0.35, 'rgba(0, 0, 0, 0.85)');
-    grad.addColorStop(0.65, 'rgba(0, 0, 0, 0.45)');
-    grad.addColorStop(0.85, 'rgba(0, 0, 0, 0.15)');
+    const cx = 256;
+    const cy = 256;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(0.68, 0.94);
+    const grad = ctx.createRadialGradient(0, 0, 24, 0, 0, 220);
+    grad.addColorStop(0.0, 'rgba(0, 0, 0, 0.88)');
+    grad.addColorStop(0.45, 'rgba(0, 0, 0, 0.68)');
+    grad.addColorStop(0.75, 'rgba(0, 0, 0, 0.22)');
     grad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
-
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.ellipse(cx, cy, 340, 480, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, 220, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
 
-    // Four intensified contact patches for the 4 tires
     if (mode === 'cars') {
       const tireOffsets = [
-        { x: cx - 220, y: cy - 280 },
-        { x: cx + 220, y: cy - 280 },
-        { x: cx - 230, y: cy + 280 },
-        { x: cx + 230, y: cy + 280 },
+        { x: cx - 118, y: cy - 142 },
+        { x: cx + 118, y: cy - 142 },
+        { x: cx - 120, y: cy + 142 },
+        { x: cx + 120, y: cy + 142 },
       ];
       tireOffsets.forEach((pt) => {
-        const tGrad = ctx.createRadialGradient(pt.x, pt.y, 10, pt.x, pt.y, 90);
-        tGrad.addColorStop(0.0, 'rgba(0, 0, 0, 0.98)');
-        tGrad.addColorStop(0.4, 'rgba(0, 0, 0, 0.7)');
+        const tGrad = ctx.createRadialGradient(pt.x, pt.y, 4, pt.x, pt.y, 42);
+        tGrad.addColorStop(0.0, 'rgba(0, 0, 0, 0.95)');
+        tGrad.addColorStop(0.45, 'rgba(0, 0, 0, 0.55)');
         tGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
         ctx.fillStyle = tGrad;
         ctx.beginPath();
-        ctx.ellipse(pt.x, pt.y, 45, 80, 0, 0, Math.PI * 2);
+        ctx.ellipse(pt.x, pt.y, 24, 40, 0, 0, Math.PI * 2);
         ctx.fill();
       });
     }
@@ -300,35 +560,35 @@ export class CarMaterialEnhancer {
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
 
-    const shadowGeo = new THREE.PlaneGeometry(bounds.w * 1.5, bounds.d * 1.35);
+    const shadowGeo = new THREE.PlaneGeometry(bounds.w * 1.24, bounds.d * 1.18);
     const shadowMat = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
-      opacity: 0.85,
+      opacity: mode === 'planes' ? 0.55 : 0.78,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -8,
     });
 
     this.contactShadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+    this.contactShadowMesh.name = 'VehicleContactAOShadow';
     this.contactShadowMesh.rotation.x = -Math.PI / 2;
-    this.contactShadowMesh.position.set(0, 0.003, 0);
+    this.contactShadowMesh.position.set(0, 0.009, 0);
     this.contactShadowMesh.renderOrder = 1;
     rootGroup.add(this.contactShadowMesh);
   }
 
-  /**
-   * Creates twin forward headlight spotlight cones casting light forward onto the pavement
-   */
-  createHeadlightProjectors(rootGroup, bounds, mode) {
-    // Delegated to VehicleDynamics for unified, correctly aligned automotive forward lighting
-    if (this.headlightProjectors) {
-      this.headlightProjectors.removeFromParent();
-      this.headlightProjectors = null;
+  setGroundContactVisible(visible, shadowOpacity = 0.44) {
+    if (this.contactShadowMesh) {
+      this.contactShadowMesh.visible = visible;
+    }
+    if (this.directionalShadowMesh) {
+      this.directionalShadowMesh.visible = visible;
+      this.directionalShadowMesh.material.opacity = shadowOpacity;
     }
   }
 
-  /**
-   * Creates subtle, diffuse chassis underglow illumination (no harsh polygon boxes)
-   */
   createUnderglow(rootGroup, bounds, mode) {
     if (this.underglowLight) {
       this.underglowLight.removeFromParent();
@@ -340,7 +600,6 @@ export class CarMaterialEnhancer {
     const group = new THREE.Group();
     group.name = 'ChassisUnderglowGroup';
 
-    // Soft downward pointlights with natural quadratic distance decay
     const col = new THREE.Color(this.underglowColor);
     const positions = [
       [0, 0.12, bounds.d * 0.22],
@@ -361,7 +620,7 @@ export class CarMaterialEnhancer {
   }
 
   /**
-   * Customizes car body paint color and finish in real-time
+   * Customizes car body paint color in real-time (user-triggered).
    */
   setPaintColor(hex) {
     this.currentPaintColor = hex;
@@ -369,38 +628,56 @@ export class CarMaterialEnhancer {
     const col = new THREE.Color(hex);
 
     this.bodyMaterials.forEach(({ paintMat }) => {
-      paintMat.color = col;
-      if (paintMat.map) {
-        // If it had a texture, tint it cleanly
-        paintMat.map = null;
-      }
+      paintMat.color.copy(col);
+      paintMat.map = null;
+      paintMat.metalness = this.currentFinish === 'matte' ? 0.15 : 0.62;
+      paintMat.roughness = this.currentFinish === 'matte' ? 0.42 : 0.15;
+      paintMat.needsUpdate = true;
+    });
+  }
+
+  /**
+   * Restores the original factory paint / racing livery textures!
+   */
+  resetFactoryPaint() {
+    this.customPaintActive = false;
+    this.bodyMaterials.forEach(({ origColor, origMap, origMetalness, origRoughness, paintMat }) => {
+      paintMat.color.copy(origColor);
+      paintMat.map = origMap;
+      paintMat.metalness = origMetalness;
+      paintMat.roughness = origRoughness;
+      paintMat.clearcoat = 1.0;
+      paintMat.clearcoatRoughness = 0.04;
       paintMat.needsUpdate = true;
     });
   }
 
   setPaintFinish(finish) {
     this.currentFinish = finish;
-    this.bodyMaterials.forEach(({ paintMat }) => {
+    this.bodyMaterials.forEach(({ hasLiveryTexture, origMetalness, paintMat }) => {
+      const keepDielectric = hasLiveryTexture && !this.customPaintActive;
       if (finish === 'matte') {
-        paintMat.clearcoat = 0.0;
-        paintMat.roughness = 0.42;
-        paintMat.metalness = 0.15;
+        paintMat.clearcoat = 0.05;
+        paintMat.roughness = 0.44;
+        paintMat.metalness = keepDielectric ? 0.08 : 0.15;
       } else if (finish === 'candy') {
         paintMat.clearcoat = 1.0;
         paintMat.clearcoatRoughness = 0.01;
-        paintMat.roughness = 0.06;
-        paintMat.metalness = 0.92;
+        paintMat.roughness = 0.08;
+        paintMat.metalness = keepDielectric ? 0.18 : 0.78;
       } else if (finish === 'carbon') {
-        paintMat.color = new THREE.Color('#14171d');
-        paintMat.clearcoat = 0.75;
-        paintMat.roughness = 0.28;
-        paintMat.metalness = 0.3;
+        if (!keepDielectric) {
+          paintMat.color.set('#14171d');
+        }
+        paintMat.clearcoat = 0.8;
+        paintMat.roughness = 0.26;
+        paintMat.metalness = 0.25;
       } else {
         // 'metallic'
         paintMat.clearcoat = 1.0;
-        paintMat.clearcoatRoughness = 0.03;
-        paintMat.roughness = 0.12;
-        paintMat.metalness = 0.82;
+        paintMat.clearcoatRoughness = 0.04;
+        paintMat.roughness = 0.16;
+        paintMat.metalness = keepDielectric ? origMetalness : 0.62;
       }
       paintMat.needsUpdate = true;
     });
@@ -409,7 +686,7 @@ export class CarMaterialEnhancer {
   setHeadlights(enabled) {
     this.headlightsActive = enabled;
     this.lightMaterials.forEach(({ mat, isRear }) => {
-      mat.emissiveIntensity = enabled ? (isRear ? 0.75 : 0.85) : 0.0;
+      mat.emissiveIntensity = enabled ? (isRear ? 0.95 : 1.1) : 0.0;
     });
   }
 
@@ -420,8 +697,8 @@ export class CarMaterialEnhancer {
       this.underglowLight.visible = enabled;
       const col = new THREE.Color(this.underglowColor);
       this.underglowLight.traverse((child) => {
-        if (child.isPointLight) child.color = col;
-        if (child.isMesh && child.material) child.material.color = col;
+        if (child.isPointLight) child.color.copy(col);
+        if (child.isMesh && child.material) child.material.color.copy(col);
       });
     }
   }

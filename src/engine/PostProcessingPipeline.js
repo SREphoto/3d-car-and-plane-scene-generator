@@ -8,11 +8,11 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 const CinematicGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
-    uContrast: { value: 1.08 },
+    uContrast: { value: 1.05 },
     uExposure: { value: 1.0 },
-    uBlackLevel: { value: 0.01 },
-    uVignette: { value: 0.3 },
-    uGrain: { value: 0.008 },
+    uBlackLevel: { value: 0.006 },
+    uVignette: { value: 0.24 },
+    uGrain: { value: 0.006 },
     uTime: { value: 0.0 },
   },
   vertexShader: `
@@ -41,11 +41,12 @@ const CinematicGradeShader = {
       vec4 tex = texture2D(tDiffuse, vUv);
       vec3 col = tex.rgb * uExposure;
 
-      // Gentle black level baseline
-      col = max(vec3(0.0), col - vec3(uBlackLevel));
+      // Gentle black-point floor in post-tonemapped sRGB space (preserves shadow detail)
+      col = max(vec3(0.0), (col - vec3(uBlackLevel)) / max(0.001, 1.0 - uBlackLevel));
 
-      // S-curve contrast adjustment
-      col = pow(col, vec3(uContrast));
+      // Filmic pivot contrast around mid-grey so highlights & white liveries stay crisp
+      vec3 centered = col - vec3(0.5);
+      col = clamp(vec3(0.5) + centered * uContrast, 0.0, 1.0);
 
       // Subtle anamorphic film grain to eliminate banding in dark gradients
       if (uGrain > 0.001) {
@@ -55,9 +56,9 @@ const CinematicGradeShader = {
 
       // Smooth cinematic lens vignette
       if (uVignette > 0.01) {
-        vec2 uvCenter = (vUv - 0.5) * vec2(1.2, 1.0);
+        vec2 uvCenter = (vUv - 0.5) * vec2(1.15, 1.0);
         float dist = dot(uvCenter, uvCenter);
-        float vig = 1.0 - smoothstep(0.25, 0.85, dist) * uVignette;
+        float vig = 1.0 - smoothstep(0.28, 0.92, dist) * uVignette;
         col *= vig;
       }
 
@@ -73,27 +74,31 @@ export class PostProcessingPipeline {
     this.camera = camera;
 
     const size = renderer.getSize(new THREE.Vector2());
-    this.composer = new EffectComposer(renderer);
+    const renderTarget = new THREE.WebGLRenderTarget(size.x, size.y, {
+      type: THREE.HalfFloatType,
+      samples: 4,
+    });
+    this.composer = new EffectComposer(renderer, renderTarget);
 
     this.renderPass = new RenderPass(scene, camera);
     this.composer.addPass(this.renderPass);
 
-    // Subtle, high-end bloom: threshold >= 1.08 ensures only real emissive/light sources bloom, never walls or paint
+    // Subtle HDR bloom strictly on real emissive light sources > 1.08
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size.x, size.y),
-      0.12, // Strength (clean, tight, cinematic bloom - NOT a blinding fog)
-      0.18, // Radius (tight, crisp lens glow)
-      1.08  // Threshold (strictly HDR emissives > 1.08 bloom)
+      0.12,
+      0.2,
+      1.08
     );
     this.composer.addPass(this.bloomPass);
 
-    // Cinematic Grade & Dark Vignette Pass
-    this.gradePass = new ShaderPass(CinematicGradeShader);
-    this.composer.addPass(this.gradePass);
-
-    // Final color space pass
+    // Tone-map linear HDR -> sRGB via ACES Filmic BEFORE display-referred film grading
     this.outputPass = new OutputPass();
     this.composer.addPass(this.outputPass);
+
+    // Post-tonemap Cinematic Grade & Lens Vignette Pass
+    this.gradePass = new ShaderPass(CinematicGradeShader);
+    this.composer.addPass(this.gradePass);
 
     this.enabled = true;
   }
@@ -103,7 +108,7 @@ export class PostProcessingPipeline {
     this.bloomPass.resolution.set(width, height);
   }
 
-  setBloom(strength, radius = 0.22, threshold = 1.05) {
+  setBloom(strength, radius = 0.22, threshold = 1.08) {
     this.bloomPass.strength = strength;
     this.bloomPass.radius = radius;
     this.bloomPass.threshold = threshold;

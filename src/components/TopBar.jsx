@@ -15,7 +15,12 @@ import {
   Snowflake,
   Wind,
   Square,
-  Maximize2
+  Maximize2,
+  Move,
+  RotateCw,
+  Gamepad2,
+  RefreshCw,
+  MousePointer2,
 } from 'lucide-react';
 import { ASPECT_RATIOS } from '../recorder/VideoExporter';
 import { CARS_CATALOG, PLANES_CATALOG, PARTS_CATALOG } from '../data/catalog';
@@ -50,6 +55,9 @@ export function TopBar({
   setRightOpen,
   musicOpen,
   setMusicOpen,
+  transformMode = 'orbit',
+  onChangeTransformMode,
+  onResetVehiclePose,
 }) {
   const WeatherIcon = WEATHER_ICONS[activeWeather] || Sun;
 
@@ -197,8 +205,80 @@ export function TopBar({
         </div>
       </div>
 
-      {/* Center: Environment Info + Aspect Ratio */}
+      {/* Center: Vehicle Move / Drive Controls + Environment Info + Aspect Ratio */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Vehicle Placement & Live Drive Segmented Control */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px',
+            background: 'rgba(0, 0, 0, 0.5)',
+            padding: '2px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid rgba(56, 189, 248, 0.22)',
+          }}
+        >
+          {[
+            { id: 'orbit', label: 'ORBIT', icon: MousePointer2, tip: 'Camera Orbit (Esc) • Shift+Click road to place vehicle' },
+            { id: 'translate', label: 'MOVE', icon: Move, tip: '3D Move Vehicle Gizmo (W) • Auto-snaps to street/floor' },
+            { id: 'rotate', label: 'ROTATE', icon: RotateCw, tip: 'Rotate Vehicle Heading (E)' },
+            { id: 'drive', label: 'DRIVE', icon: Gamepad2, tip: 'Live Drive / Fly Mode (G) • Use WASD or Arrow Keys!' },
+          ].map((tool) => {
+            const Icon = tool.icon;
+            const active = transformMode === tool.id;
+            return (
+              <button
+                key={tool.id}
+                onClick={() => onChangeTransformMode && onChangeTransformMode(tool.id)}
+                title={tool.tip}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  background: active
+                    ? tool.id === 'drive'
+                      ? 'rgba(16, 185, 129, 0.24)'
+                      : 'rgba(56, 189, 248, 0.22)'
+                    : 'transparent',
+                  border: 'none',
+                  borderRadius: '3px',
+                  color: active
+                    ? tool.id === 'drive'
+                      ? '#34d399'
+                      : 'var(--accent-cyan)'
+                    : 'var(--text-muted)',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.12s ease',
+                }}
+              >
+                <Icon size={12} />
+                <span>{tool.label}</span>
+              </button>
+            );
+          })}
+
+          <button
+            onClick={() => onResetVehiclePose && onResetVehiclePose()}
+            title="Reset Vehicle to Scene Hero Spawn"
+            style={{
+              padding: '4px 6px',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '3px',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <RefreshCw size={11} />
+          </button>
+        </div>
+
         {/* Environment Pill */}
         <div
           style={{

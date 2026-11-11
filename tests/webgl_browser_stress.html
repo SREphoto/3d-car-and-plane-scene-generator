@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebGL Real Context Stress Test - 56 Models</title>
+  <style>
+    body { background: #000; color: #fff; font-family: monospace; }
+    canvas { width: 320px; height: 240px; display: block; }
+  </style>
+</head>
+<body>
+  <h1>WebGL Real Context Stress Test</h1>
+  <canvas id="c"></canvas>
+  <pre id="log"></pre>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/node_modules/three/build/three.module.js",
+        "three/addons/": "/node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    const canvas = document.getElementById('c');
+    const logEl = document.getElementById('log');
+    function log(msg) {
+      logEl.textContent += msg + '\n';
+      console.log(msg);
+    }
+
+    const MODELS = [
+      // 20 Cars
+      { cat: 'Cars', id: '1975-porsche-911-turbo', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/1975-porsche-911-turbo/source/1975-porsche-911-turbo.glb' },
+      { cat: 'Cars', id: 'lb-works-ferrari-f40', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/lb-works-ferrari-f40/source/lb-works-ferrari-f40.glb' },
+      { cat: 'Cars', id: 'lamborghini-aventador', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/lamborghini-aventador/source/lamborghini-aventador.glb' },
+      { cat: 'Cars', id: 'nissan-skyline-r34-gtr', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/nissan-skyline-r34-gtr/source/nissan-skyline-r34-gtr.glb' },
+      { cat: 'Cars', id: 'audi-r8', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/audi-r8/source/audi-r8.glb' },
+      { cat: 'Cars', id: 'ford-gt-2006', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/ford-gt-2006/source/ford-gt-2006.glb' },
+      { cat: 'Cars', id: '2019-chevrolet-corvette-c8', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/2019-chevrolet-corvette-c8/source/2019-chevrolet-corvette-c8.glb' },
+      { cat: 'Cars', id: 'bmw-m3-e30', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/bmw-m3-e30/source/bmw-m3-e30.glb' },
+      { cat: 'Cars', id: '2019-aston-martin-vantage', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/2019-aston-martin-vantage/source/2019-aston-martin-vantage.glb' },
+      { cat: 'Cars', id: 'koenigsegg-one-pro', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/koenigsegg-one-pro/source/koenigsegg-one-pro.glb' },
+      { cat: 'Cars', id: 'bugatti-chiron-mansory', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/bugatti-chiron-mansory/source/bugatti-chiron-mansory.glb' },
+      { cat: 'Cars', id: 'dodge-viper-gts', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/dodge-viper-gts/source/dodge-viper-gts.glb' },
+      { cat: 'Cars', id: 'mazda-rx7-fd', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/mazda-rx7-fd/source/mazda-rx7-fd.glb' },
+      { cat: 'Cars', id: 'toyota-supra-mk4', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/toyota-supra-mk4/source/toyota-supra-mk4.glb' },
+      { cat: 'Cars', id: 'mercedes-amg-gt3', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/mercedes-amg-gt3/source/mercedes-amg-gt3.glb' },
+      { cat: 'Cars', id: 'shelby-cobra-427', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/shelby-cobra-427/source/shelby-cobra-427.glb' },
+      { cat: 'Cars', id: 'subaru-impreza-wrx-sti', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/subaru-impreza-wrx-sti/source/subaru-impreza-wrx-sti.glb' },
+      { cat: 'Cars', id: 'honda-nsx-1990', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/honda-nsx-1990/source/honda-nsx-1990.glb' },
+      { cat: 'Cars', id: 'mclaren-senna', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/mclaren-senna/source/mclaren-senna.glb' },
+      { cat: 'Cars', id: 'mitsubishi-lancer-evo', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Cars/mitsubishi-lancer-evo/source/mitsubishi-lancer-evo.glb' },
+      // 20 Parts
+      { cat: 'Car_Parts', id: 'v8-engine', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/v8-engine/source/v8-engine.glb' },
+      { cat: 'Car_Parts', id: 'car-turbocharger', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/car-turbocharger/source/car-turbocharger.glb' },
+      { cat: 'Car_Parts', id: 'bbs-rs16-wheel-rim', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/bbs-rs16-wheel-rim/source/bbs-rs16-wheel-rim.glb' },
+      { cat: 'Car_Parts', id: 'brembo-brake-caliper', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/brembo-brake-caliper/source/brembo-brake-caliper.glb' },
+      { cat: 'Car_Parts', id: 'recaro-speed-racing-seat', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/recaro-speed-racing-seat/source/recaro-speed-racing-seat.glb' },
+      { cat: 'Car_Parts', id: 'race-steering-wheel-essenza', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/race-steering-wheel-essenza/source/race-steering-wheel-essenza.glb' },
+      { cat: 'Car_Parts', id: 'bmw-m2-carbon-spoiler', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/bmw-m2-carbon-spoiler/source/bmw-m2-carbon-spoiler.glb' },
+      { cat: 'Car_Parts', id: 'exhaust-manifold-header', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/exhaust-manifold-header/source/exhaust-manifold-header.glb' },
+      { cat: 'Car_Parts', id: 'supercharged-sbc-v8-blower', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/supercharged-sbc-v8-blower/source/supercharged-sbc-v8-blower.glb' },
+      { cat: 'Car_Parts', id: 'car-engine-alternator', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/car-engine-alternator/source/car-engine-alternator.glb' },
+      { cat: 'Car_Parts', id: 'manual-transmission-gearbox', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/manual-transmission-gearbox/source/manual-transmission-gearbox.glb' },
+      { cat: 'Car_Parts', id: 'rim-tg002-forged-wheel', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/rim-tg002-forged-wheel/source/rim-tg002-forged-wheel.glb' },
+      { cat: 'Car_Parts', id: 'blue-coilovers-suspension', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/blue-coilovers-suspension/source/blue-coilovers-suspension.glb' },
+      { cat: 'Car_Parts', id: 'sbc-v8-intake-manifold', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/sbc-v8-intake-manifold/source/sbc-v8-intake-manifold.glb' },
+      { cat: 'Car_Parts', id: 'volvo-intercooler', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/volvo-intercooler/source/volvo-intercooler.glb' },
+      { cat: 'Car_Parts', id: 'rotor-disc-brake', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/rotor-disc-brake/source/rotor-disc-brake.glb' },
+      { cat: 'Car_Parts', id: 'nos-nitrous-bottle', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/nos-nitrous-bottle/source/nos-nitrous-bottle.glb' },
+      { cat: 'Car_Parts', id: 'round-projector-headlight', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/round-projector-headlight/source/round-projector-headlight.glb' },
+      { cat: 'Car_Parts', id: 'bosch-12v-battery', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/bosch-12v-battery/source/bosch-12v-battery.glb' },
+      { cat: 'Car_Parts', id: 'f1-steering-wheel-w11', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Parts/f1-steering-wheel-w11/source/f1-steering-wheel-w11.glb' },
+      // 4 Garages
+      { cat: 'Garages', id: 'underground_garage', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/underground_garage.glb' },
+      { cat: 'Garages', id: 'desert_workshop_garage', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/desert_workshop_garage.glb' },
+      { cat: 'Garages', id: 'cyberpunk_garage', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/cyberpunk_garage.glb' },
+      { cat: 'Garages', id: 'detailed_parking_garage', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/detailed_parking_garage.glb' },
+      // 2 City Streets
+      { cat: 'City_Streets', id: 'city_street_asphalt', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/city_street_asphalt.glb' },
+      { cat: 'City_Streets', id: 'cyberpunk_night_street', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/cyberpunk_night_street.glb' },
+      // 4 Showcase Locations
+      { cat: 'Showcase_Locations', id: 'car_showroom_dealership', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/car_showroom_dealership.glb' },
+      { cat: 'Showcase_Locations', id: 'architectural_exhibition_hall', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/architectural_exhibition_hall.glb' },
+      { cat: 'Showcase_Locations', id: 'car_studio_cyclorama', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/car_studio_cyclorama.glb' },
+      { cat: 'Showcase_Locations', id: 'vehicle_display_podium', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Locations/vehicle_display_podium.glb' },
+      // 6 Planes
+      { cat: 'Planes', id: 'lockheed-f22-raptor', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Planes/lockheed-f22-raptor/source/lockheed-f22-raptor.glb' },
+      { cat: 'Planes', id: 'boeing-787-dreamliner', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Planes/boeing-787-dreamliner/source/boeing-787-dreamliner.glb' },
+      { cat: 'Planes', id: 'concorde-supersonic', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Planes/concorde-supersonic/source/concorde-supersonic.glb' },
+      { cat: 'Planes', id: 'supermarine-spitfire', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Planes/supermarine-spitfire/source/supermarine-spitfire.glb' },
+      { cat: 'Planes', id: 'lockheed-sr71-blackbird', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Planes/lockheed-sr71-blackbird/source/lockheed-sr71-blackbird.glb' },
+      { cat: 'Planes', id: 'airbus-a380', url: '/3D%20Car%20and%20Plane%20Scene%20Creator/Planes/airbus-a380/source/airbus-a380.glb' }
+    ];
+
+    async function run() {
+      log('Starting WebGL Stress Test across ' + MODELS.length + ' models...');
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(320, 240);
+      } catch (e) {
+        log('FATAL: WebGLRenderer init failed: ' + e.message);
+        window.__WEBGL_TEST_STATUS__ = { passed: false, error: e.message };
+        return;
+      }
+
+      const gl = renderer.getContext();
+      log('WebGL Context acquired: ' + (gl instanceof WebGLRenderingContext ? 'WebGL1' : 'WebGL2'));
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, 320 / 240, 0.1, 100);
+      camera.position.set(0, 2, 5);
+      camera.lookAt(0, 0, 0);
+
+      const light = new THREE.DirectionalLight(0xffffff, 2);
+      light.position.set(5, 10, 7);
+      scene.add(light);
+      scene.add(new THREE.AmbientLight(0x404040, 1.5));
+
+      const holder = new THREE.Group();
+      scene.add(holder);
+
+      const loader = new GLTFLoader();
+      let passCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < MODELS.length; i++) {
+        const m = MODELS[i];
+        while (holder.children.length > 0) {
+          holder.remove(holder.children[0]);
+        }
+
+        try {
+          const gltf = await new Promise((resolve, reject) => {
+            loader.load(m.url, resolve, undefined, reject);
+          });
+
+          holder.add(gltf.scene);
+          renderer.render(scene, camera);
+
+          const errCode = gl.getError();
+          if (errCode !== gl.NO_ERROR) {
+            throw new Error('gl.getError() returned code ' + errCode);
+          }
+
+          passCount++;
+          log(`[${i+1}/${MODELS.length}] PASS: ${m.id}`);
+        } catch (err) {
+          failCount++;
+          log(`[${i+1}/${MODELS.length}] FAIL: ${m.id} - ${err.message}`);
+        }
+      }
+
+      log(`\nCOMPLETED: ${passCount} passed, ${failCount} failed.`);
+      window.__WEBGL_TEST_STATUS__ = {
+        passed: failCount === 0 && passCount === MODELS.length,
+        passCount,
+        failCount
+      };
+
+      try {
+        await fetch('/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(window.__WEBGL_TEST_STATUS__)
+        });
+      } catch (err) {
+        console.error('Failed to post report:', err);
+      }
+
+      const doneIndicator = document.createElement('div');
+      doneIndicator.id = 'done-indicator';
+      doneIndicator.textContent = window.__WEBGL_TEST_STATUS__.passed ? 'ALL_PASSED' : 'TESTS_FAILED';
+      document.body.appendChild(doneIndicator);
+    }
+
+    run().catch((e) => {
+      log('FATAL ERROR: ' + e.message);
+      window.__WEBGL_TEST_STATUS__ = { passed: false, error: e.message };
+    });
+  </script>
+</body>
+</html>

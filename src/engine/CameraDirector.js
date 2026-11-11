@@ -1,5 +1,18 @@
 import * as THREE from 'three';
 
+const ENCLOSED_SCENES = new Set([
+  'car_garage',
+  'red_bull_f1_garage',
+  'f1_pit_garage',
+  'interior_7',
+  'abandoned_vr_gallery',
+  'building_interior_scan',
+  'cyberpunk_garage',
+  'desert_workshop_garage',
+  'architectural_exhibition_hall',
+  'catwalk',
+]);
+
 export class CameraDirector {
   constructor(camera, controls) {
     this.camera = camera;
@@ -10,6 +23,7 @@ export class CameraDirector {
     this.baseFov = 42;
     this.bounds = { w: 2.2, h: 1.4, d: 4.8 };
     this.subjectYOffset = 0;
+    this.subjectHolder = null;
     this.sceneId = 'interior_7';
 
     // Multi-shot sequence state
@@ -26,28 +40,54 @@ export class CameraDirector {
     this.beatCutCooldown = 0;
 
     this.onShotChangeCallback = null;
+
+    this._localCam = new THREE.Vector3();
+    this._localTarget = new THREE.Vector3();
+    this._yAxis = new THREE.Vector3(0, 1, 0);
+  }
+
+  bindSubjectHolder(holder) {
+    this.subjectHolder = holder;
+  }
+
+  _applySubjectFrame(localCam, localTarget) {
+    if (!this.subjectHolder) {
+      this.camera.position.copy(localCam);
+      this.controls.target.copy(localTarget);
+      return;
+    }
+    const pos = this.subjectHolder.position;
+    const yaw = this.subjectHolder.rotation.y;
+    this._localCam.copy(localCam).applyAxisAngle(this._yAxis, yaw).add(pos);
+    this._localTarget.copy(localTarget).applyAxisAngle(this._yAxis, yaw).add(pos);
+    this.camera.position.copy(this._localCam);
+    this.controls.target.copy(this._localTarget);
   }
 
   setSceneId(sceneId) {
     this.sceneId = sceneId;
-    if (sceneId === 'car_garage') {
-      this.controls.maxDistance = 6.8;
-      this.controls.minDistance = 1.0;
-      this.controls.maxPolarAngle = Math.PI * 0.495;
-    } else if (sceneId === 'interior_7') {
+    if (sceneId === 'car_garage' || sceneId === 'red_bull_f1_garage' || sceneId === 'f1_pit_garage') {
       this.controls.maxDistance = 8.5;
       this.controls.minDistance = 1.0;
       this.controls.maxPolarAngle = Math.PI * 0.495;
-    } else if (sceneId === 'abandoned_vr_gallery') {
-      this.controls.maxDistance = 7.8;
+    } else if (sceneId === 'interior_7') {
+      this.controls.maxDistance = 9.0;
       this.controls.minDistance = 1.0;
       this.controls.maxPolarAngle = Math.PI * 0.495;
-    } else if (sceneId === 'wind_tunnel') {
+    } else if (sceneId === 'abandoned_vr_gallery' || sceneId === 'building_interior_scan') {
+      this.controls.maxDistance = 10.5;
+      this.controls.minDistance = 1.0;
+      this.controls.maxPolarAngle = Math.PI * 0.495;
+    } else if (sceneId === 'cyberpunk_garage' || sceneId === 'desert_workshop_garage' || sceneId === 'catwalk') {
+      this.controls.maxDistance = 14.0;
+      this.controls.minDistance = 1.0;
+      this.controls.maxPolarAngle = Math.PI * 0.495;
+    } else if (sceneId === 'wind_tunnel' || sceneId === 'architectural_exhibition_hall') {
       this.controls.maxDistance = 24.0;
       this.controls.minDistance = 1.2;
       this.controls.maxPolarAngle = Math.PI * 0.495;
     } else {
-      this.controls.maxDistance = 140;
+      this.controls.maxDistance = 420;
       this.controls.minDistance = 1.2;
       this.controls.maxPolarAngle = Math.PI * 0.495;
     }
@@ -71,27 +111,40 @@ export class CameraDirector {
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
 
+    const localCam = new THREE.Vector3();
+    const localTarget = new THREE.Vector3(0, hMid, 0);
+
     if (this.sceneId === 'interior_7') {
-      // Place camera in the great room looking across the vehicle towards the panoramic glass windows & city skyline
-      this.camera.position.set(3.4, Math.max(1.25, h * 0.95) + this.subjectYOffset, 1.2);
-      this.controls.target.set(0, hMid, -0.4);
-    } else if (this.sceneId === 'car_garage') {
-      // Underground garage bay framing
-      this.camera.position.set(-3.6, Math.max(1.05, h * 0.88) + this.subjectYOffset, -3.2);
-      this.controls.target.set(0, hMid, 0);
-    } else if (this.sceneId === 'abandoned_vr_gallery') {
-      // Under the skylight sunbeam shaft
-      this.camera.position.set(-3.5, Math.max(1.15, h * 0.92) + this.subjectYOffset, -3.8);
-      this.controls.target.set(0, hMid, 0);
+      localCam.set(3.4, Math.max(1.25, h * 0.95) + this.subjectYOffset, 1.2);
+      localTarget.set(0, hMid, -0.4);
+    } else if (
+      this.sceneId === 'car_garage' ||
+      this.sceneId === 'red_bull_f1_garage' ||
+      this.sceneId === 'f1_pit_garage'
+    ) {
+      localCam.set(-3.6, Math.max(1.08, h * 0.9) + this.subjectYOffset, -3.5);
+    } else if (this.sceneId === 'abandoned_vr_gallery' || this.sceneId === 'building_interior_scan') {
+      localCam.set(-3.8, Math.max(1.18, h * 0.92) + this.subjectYOffset, -4.0);
     } else if (this.sceneId === 'wind_tunnel') {
-      // Framing on the aerodynamic turntable
-      this.camera.position.set(-4.2, Math.max(1.2, h * 0.95) + this.subjectYOffset, -4.6);
-      this.controls.target.set(0, hMid, 0);
+      localCam.set(-4.2, Math.max(1.2, h * 0.95) + this.subjectYOffset, -4.6);
+    } else if (this.sceneId === 'vatican_city' || this.sceneId === 'eglise_saint_polycarpe') {
+      // Low architectural 3/4 hero angle tilted gently upward so St. Peter's Dome & heritage facades fill the upper frame
+      localCam.set(-span * 1.02, Math.max(1.02, h * 0.78) + this.subjectYOffset, -span * 1.24);
+      localTarget.set(0, Math.max(1.38, h * 1.08) + this.subjectYOffset, d * 0.12);
+    } else if (
+      this.sceneId === 'la_night_city' ||
+      this.sceneId === 'canadian_downtown' ||
+      this.sceneId === 'kent_lumber_yard' ||
+      this.sceneId === 'construction_site'
+    ) {
+      // Cinema street-level 3/4 front-left hero framing
+      localCam.set(-span * 0.95, Math.max(1.15, h * 0.88) + this.subjectYOffset, -span * 1.18);
+      localTarget.set(0, hMid, -d * 0.08);
     } else {
-      // Standard 3/4 front-right isometric hero view
-      this.camera.position.set(-span * 1.05, h * 1.1 + this.subjectYOffset, -span * 1.25);
-      this.controls.target.set(0, hMid, 0);
+      localCam.set(-span * 1.05, Math.max(1.15, h * 1.05) + this.subjectYOffset, -span * 1.25);
     }
+
+    this._applySubjectFrame(localCam, localTarget);
     this.controls.update();
   }
 
@@ -128,7 +181,7 @@ export class CameraDirector {
     if (this.beatCutCooldown > 0) return;
     this.currentClipIndex = (this.currentClipIndex + 1) % this.sequence.length;
     this.clipElapsed = 0;
-    this.beatCutCooldown = 1.35; // Minimum 1.35s between beat-triggered cuts
+    this.beatCutCooldown = 1.35;
     this.setShot(this.sequence[this.currentClipIndex].shotId);
   }
 
@@ -136,8 +189,8 @@ export class CameraDirector {
     return this.sequence.reduce((acc, c) => acc + (Number(c.duration) || 3.5), 0);
   }
 
-  update(dt, subjectYOffset = 0) {
-    this.subjectYOffset = subjectYOffset;
+  update(dt, subjectBobY = 0) {
+    this.subjectYOffset = subjectBobY;
     if (this.beatCutCooldown > 0) {
       this.beatCutCooldown = Math.max(0, this.beatCutCooldown - dt);
     }
@@ -162,9 +215,8 @@ export class CameraDirector {
     const t = this.shotElapsed;
     const { w, h, d } = this.bounds;
     const span = Math.max(w, d);
-    const hMid = h * 0.45 + subjectYOffset;
+    const hMid = h * 0.45 + subjectBobY;
 
-    // Progress [0..1] over current clip or 5s loop
     const activeDur =
       this.isPlayingSequence && this.sequence[this.currentClipIndex]
         ? Math.max(1.5, Number(this.sequence[this.currentClipIndex].duration) || 4.0)
@@ -172,269 +224,246 @@ export class CameraDirector {
     const u = (this.shotElapsed % activeDur) / activeDur;
     const smoothU = u * u * (3.0 - 2.0 * u);
 
-    const isEnclosed =
+    const isEnclosed = ENCLOSED_SCENES.has(this.sceneId);
+    const isTightGarage =
       this.sceneId === 'car_garage' ||
-      this.sceneId === 'interior_7' ||
-      this.sceneId === 'abandoned_vr_gallery';
+      this.sceneId === 'red_bull_f1_garage' ||
+      this.sceneId === 'f1_pit_garage';
+
+    const localCam = new THREE.Vector3();
+    const localTarget = new THREE.Vector3(0, hMid, 0);
 
     switch (this.activeShotId) {
       case 'orbit_360': {
-        const maxR =
-          this.sceneId === 'car_garage'
-            ? 3.8
-            : this.sceneId === 'interior_7'
-            ? 4.6
-            : this.sceneId === 'abandoned_vr_gallery'
-            ? 4.2
-            : span * 1.45;
+        const maxR = isTightGarage
+          ? 3.9
+          : this.sceneId === 'interior_7'
+          ? 4.6
+          : isEnclosed
+          ? 4.8
+          : span * 1.45;
         const radius = Math.min(span * 1.35, maxR);
-        const maxAlt = this.sceneId === 'car_garage' ? 2.3 : this.sceneId === 'interior_7' ? 4.6 : 4.0;
+        const maxAlt = isTightGarage ? 2.3 : this.sceneId === 'interior_7' ? 4.6 : 4.2;
         const angle = -Math.PI * 0.75 + t * 0.65;
         this.camera.fov = this.baseFov;
-        this.camera.position.set(
+        localCam.set(
           Math.cos(angle) * radius,
-          Math.min(maxAlt, h * 0.85 + Math.sin(t * 0.8) * h * 0.22 + subjectYOffset),
+          Math.min(maxAlt, h * 0.85 + Math.sin(t * 0.8) * h * 0.22 + subjectBobY),
           Math.sin(angle) * radius
         );
-        this.controls.target.set(0, hMid, 0);
+        localTarget.set(0, hMid, 0);
         break;
       }
 
       case 'low_hero_pan': {
-        // Low ground-skimming wide lens arc across the front nose (-Z)
         const angle = THREE.MathUtils.lerp(-Math.PI * 0.78, -Math.PI * 0.22, smoothU);
-        const maxR = this.sceneId === 'car_garage' ? 3.6 : span * 1.05;
+        const maxR = isTightGarage ? 3.6 : span * 1.05;
         const radius = Math.min(span * 1.05, maxR);
         this.camera.fov = 52;
-        this.camera.position.set(
+        localCam.set(
           Math.cos(angle) * radius,
-          Math.max(0.28, h * 0.24) + subjectYOffset,
+          Math.max(0.28, h * 0.24) + subjectBobY,
           Math.sin(angle) * radius
         );
-        this.controls.target.set(0, h * 0.38 + subjectYOffset, -d * 0.18);
+        localTarget.set(0, h * 0.38 + subjectBobY, -d * 0.18);
         break;
       }
 
       case 'vertigo_dolly_zoom': {
-        // Hitchcock contra-zoom: FOV narrows while camera pulls back proportionally
-        // In enclosed rooms, clamp travel distance so camera never clips outside walls!
         const pingPong = 0.5 - 0.5 * Math.cos(u * Math.PI * 2.0);
-        const minFov = isEnclosed ? 34 : 17;
+        const minFov = isEnclosed ? 34 : 18;
         const maxFov = isEnclosed ? 58 : 66;
         const fovDeg = THREE.MathUtils.lerp(maxFov, minFov, pingPong);
         const fovRad = THREE.MathUtils.degToRad(fovDeg);
         const frameWidth = span * 0.92;
         let dist = frameWidth / (2.0 * Math.tan(fovRad * 0.5));
-        const maxDist = this.sceneId === 'car_garage' ? 5.0 : this.sceneId === 'interior_7' ? 6.2 : 6.0;
+        const maxDist = isTightGarage ? 5.0 : isEnclosed ? 6.4 : span * 3.2;
         dist = Math.min(dist, maxDist);
 
         const dir = new THREE.Vector3(-0.62, 0.22, -0.75).normalize();
         this.camera.fov = fovDeg;
-        this.camera.position.set(
+        localCam.set(
           dir.x * dist,
           Math.max(0.4, hMid + dir.y * dist * 0.45),
           dir.z * dist
         );
-        this.controls.target.set(0, hMid, -d * 0.08);
+        localTarget.set(0, hMid, -d * 0.08);
         break;
       }
 
       case 'tracking_slider': {
-        // Parallel lateral slider along the profile from front (-Z) to rear (+Z)
         const zPos = THREE.MathUtils.lerp(-d * 0.85, d * 0.85, smoothU);
-        const latDist = this.sceneId === 'car_garage' ? Math.min(span * 1.18, 3.4) : span * 1.18;
+        const latDist = isTightGarage ? Math.min(span * 1.18, 3.4) : span * 1.18;
         this.camera.fov = 38;
-        this.camera.position.set(-latDist, h * 0.55 + subjectYOffset, zPos);
-        this.controls.target.set(0, h * 0.44 + subjectYOffset, zPos * 0.55);
+        localCam.set(-latDist, h * 0.55 + subjectBobY, zPos);
+        localTarget.set(0, h * 0.44 + subjectBobY, zPos * 0.55);
         break;
       }
 
       case 'crane_reveal': {
-        // Starts low & close on nose, cranes high and arcs over roof
-        const maxZ = this.sceneId === 'car_garage' ? 4.2 : span * 1.15;
+        const maxZ = isTightGarage ? 4.2 : span * 1.15;
         const zPos = THREE.MathUtils.lerp(-span * 0.85, maxZ, smoothU);
-        const maxY = this.sceneId === 'car_garage' ? 2.4 : this.sceneId === 'interior_7' ? 4.8 : 4.0;
+        const maxY = isTightGarage ? 2.4 : isEnclosed ? 4.6 : h * 3.0;
         const rawY = THREE.MathUtils.lerp(h * 0.28, h * 2.35, Math.sin(smoothU * Math.PI * 0.85));
         const yPos = Math.min(maxY, rawY);
         const xPos = THREE.MathUtils.lerp(-span * 0.35, span * 0.65, smoothU);
         this.camera.fov = 42;
-        this.camera.position.set(xPos, yPos + subjectYOffset, zPos);
-        this.controls.target.set(0, hMid, THREE.MathUtils.lerp(-d * 0.3, d * 0.1, smoothU));
+        localCam.set(xPos, yPos + subjectBobY, zPos);
+        localTarget.set(0, hMid, THREE.MathUtils.lerp(-d * 0.3, d * 0.1, smoothU));
         break;
       }
 
       case 'macro_aero_sweep': {
-        // Tight telephoto detail sweep along upper bodywork / canopy
         const zPos = THREE.MathUtils.lerp(-d * 0.42, d * 0.42, smoothU);
         this.camera.fov = 24;
-        this.camera.position.set(-w * 0.92, h * 0.78 + subjectYOffset, zPos - span * 0.35);
-        this.controls.target.set(0, h * 0.56 + subjectYOffset, zPos);
+        localCam.set(-w * 0.92, h * 0.78 + subjectBobY, zPos - span * 0.35);
+        localTarget.set(0, h * 0.56 + subjectBobY, zPos);
         break;
       }
 
       case 'whip_pan_speed': {
-        // Energetic low chase cam with subtle vibration
         const shakeX = Math.sin(t * 28.0) * 0.035;
         const shakeY = Math.cos(t * 34.0) * 0.025;
         const swing = Math.sin(u * Math.PI * 2.0) * span * 0.48;
         this.camera.fov = 56;
-        this.camera.position.set(
+        localCam.set(
           swing + shakeX,
-          h * 0.58 + shakeY + subjectYOffset,
-          -Math.min(span * 1.15, 4.2)
+          h * 0.58 + shakeY + subjectBobY,
+          -Math.min(span * 1.15, 4.4)
         );
-        this.controls.target.set(0, h * 0.42 + subjectYOffset, 0);
+        localTarget.set(0, h * 0.42 + subjectBobY, 0);
         break;
       }
 
-      // --- Scene-Specific Signature Cinematic Camera Moves ---
-
       case 'loft_skyline_hero': {
-        // Glides past the panoramic glass windows framing the car against the towering skyscrapers
         const xPos = THREE.MathUtils.lerp(3.6, 2.0, smoothU);
         const zPos = THREE.MathUtils.lerp(-1.8, 1.8, smoothU);
-        const yPos = 1.35 + Math.sin(smoothU * Math.PI) * 0.35 + subjectYOffset;
+        const yPos = 1.35 + Math.sin(smoothU * Math.PI) * 0.35 + subjectBobY;
         this.camera.fov = 40;
-        this.camera.position.set(xPos, yPos, zPos);
-        this.controls.target.set(0, hMid, -0.3);
+        localCam.set(xPos, yPos, zPos);
+        localTarget.set(0, hMid, -0.3);
         break;
       }
 
       case 'loft_glass_pan': {
-        // Skims low along the polished floor catching panoramic window reflections
         const xPos = THREE.MathUtils.lerp(2.2, -1.2, smoothU);
         const zPos = THREE.MathUtils.lerp(-2.8, -3.2, smoothU);
         this.camera.fov = 54;
-        this.camera.position.set(xPos, 0.42 + subjectYOffset, zPos);
-        this.controls.target.set(0, h * 0.4 + subjectYOffset, -d * 0.15);
+        localCam.set(xPos, 0.42 + subjectBobY, zPos);
+        localTarget.set(0, h * 0.4 + subjectBobY, -d * 0.15);
         break;
       }
 
       case 'loft_profile_slider': {
-        // Parallel track along the driver profile with natural daylight illumination
         const zPos = THREE.MathUtils.lerp(-d * 0.7, d * 0.7, smoothU);
         this.camera.fov = 36;
-        this.camera.position.set(2.8, 1.25 + subjectYOffset, zPos);
-        this.controls.target.set(0, hMid, zPos * 0.6);
+        localCam.set(2.8, 1.25 + subjectBobY, zPos);
+        localTarget.set(0, hMid, zPos * 0.6);
         break;
       }
 
       case 'garage_bay_orbit': {
-        // Tight 360 orbit strictly inside the underground tuner bay under ceiling beams
         const radius = 3.6;
         const angle = -Math.PI * 0.75 + t * 0.55;
         this.camera.fov = 48;
-        this.camera.position.set(
+        localCam.set(
           Math.cos(angle) * radius,
-          1.25 + Math.sin(t * 0.7) * 0.2 + subjectYOffset,
+          1.25 + Math.sin(t * 0.7) * 0.2 + subjectBobY,
           Math.sin(angle) * radius
         );
-        this.controls.target.set(0, hMid, 0);
+        localTarget.set(0, hMid, 0);
         break;
       }
 
       case 'garage_alignment_track': {
-        // Ultra-low tracking shot along forged wheels, tires, and brake calipers
         const zPos = THREE.MathUtils.lerp(-d * 0.6, d * 0.6, smoothU);
         this.camera.fov = 44;
-        this.camera.position.set(-2.2, 0.38 + subjectYOffset, zPos);
-        this.controls.target.set(-0.4, 0.35 + subjectYOffset, zPos);
+        localCam.set(-2.2, 0.38 + subjectBobY, zPos);
+        localTarget.set(-0.4, 0.35 + subjectBobY, zPos);
         break;
       }
 
       case 'garage_front_hero': {
-        // Low frontal heroic angle catching the overhead fluorescent strip lights
         const angle = THREE.MathUtils.lerp(-Math.PI * 0.65, -Math.PI * 0.35, smoothU);
         this.camera.fov = 52;
-        this.camera.position.set(
+        localCam.set(
           Math.cos(angle) * 3.4,
-          0.55 + subjectYOffset,
+          0.55 + subjectBobY,
           Math.sin(angle) * 3.4
         );
-        this.controls.target.set(0, h * 0.42 + subjectYOffset, -d * 0.2);
+        localTarget.set(0, h * 0.42 + subjectBobY, -d * 0.2);
         break;
       }
 
       case 'gallery_skylight_beam': {
-        // Upward angle looking through the dramatic skylight sunbeam shaft at the car
         const angle = THREE.MathUtils.lerp(-Math.PI * 0.8, -Math.PI * 0.25, smoothU);
         const radius = 3.8;
         this.camera.fov = 50;
-        this.camera.position.set(
+        localCam.set(
           Math.cos(angle) * radius,
-          0.65 + smoothU * 0.7 + subjectYOffset,
+          0.65 + smoothU * 0.7 + subjectBobY,
           Math.sin(angle) * radius
         );
-        this.controls.target.set(0, h * 0.5 + subjectYOffset, 0);
+        localTarget.set(0, h * 0.5 + subjectBobY, 0);
         break;
       }
 
       case 'gallery_brutalist_arc': {
-        // Atmospheric low arc moving between weathered concrete gallery columns
         const xPos = THREE.MathUtils.lerp(-3.8, 3.8, smoothU);
         this.camera.fov = 42;
-        this.camera.position.set(xPos, 1.45 + subjectYOffset, -3.6);
-        this.controls.target.set(0, hMid, 0);
+        localCam.set(xPos, 1.45 + subjectBobY, -3.6);
+        localTarget.set(0, hMid, 0);
         break;
       }
 
       case 'wind_intake_zoom': {
-        // Cinematic zoom looking down the turbine shaft towards the front aero splitter
         const zDist = THREE.MathUtils.lerp(-16.0, -5.2, smoothU);
         this.camera.fov = 34;
-        this.camera.position.set(0.1, 1.25 + subjectYOffset, zDist);
-        this.controls.target.set(0, h * 0.45 + subjectYOffset, -d * 0.25);
+        localCam.set(0.1, 1.25 + subjectBobY, zDist);
+        localTarget.set(0, h * 0.45 + subjectBobY, -d * 0.25);
         break;
       }
 
       case 'wind_aero_track': {
-        // Lateral aerodynamic track capturing active aero surfaces & wings
         const zPos = THREE.MathUtils.lerp(-d * 0.75, d * 0.75, smoothU);
         this.camera.fov = 38;
-        this.camera.position.set(-4.2, 1.35 + subjectYOffset, zPos);
-        this.controls.target.set(0, hMid, zPos * 0.55);
+        localCam.set(-4.2, 1.35 + subjectBobY, zPos);
+        localTarget.set(0, hMid, zPos * 0.55);
         break;
       }
 
       case 'plane_flyby_underpass': {
-        // Dramatic upward pass directly underneath the aircraft belly & wing engines
         const zPos = THREE.MathUtils.lerp(-span * 1.1, span * 1.1, u);
         this.camera.fov = 54;
-        this.camera.position.set(
-          span * 0.18,
-          Math.max(0.25, subjectYOffset - h * 0.45),
-          zPos
-        );
-        this.controls.target.set(0, h * 0.55 + subjectYOffset, 0);
+        localCam.set(span * 0.18, Math.max(0.25, subjectBobY - h * 0.45), zPos);
+        localTarget.set(0, h * 0.55 + subjectBobY, 0);
         break;
       }
 
       case 'plane_wingtip_to_nose': {
-        // Glides from starboard wingtip strobe across engine nacelles to cockpit flight deck
         const xPos = THREE.MathUtils.lerp(-w * 0.72, -w * 0.15, smoothU);
         const zPos = THREE.MathUtils.lerp(d * 0.15, -d * 0.72, smoothU);
-        const yPos = THREE.MathUtils.lerp(h * 0.52, h * 0.65, smoothU) + subjectYOffset;
+        const yPos = THREE.MathUtils.lerp(h * 0.52, h * 0.65, smoothU) + subjectBobY;
         this.camera.fov = 36;
-        this.camera.position.set(xPos, yPos, zPos);
-        this.controls.target.set(
+        localCam.set(xPos, yPos, zPos);
+        localTarget.set(
           THREE.MathUtils.lerp(-w * 0.25, 0, smoothU),
-          h * 0.46 + subjectYOffset,
+          h * 0.46 + subjectBobY,
           THREE.MathUtils.lerp(0, -d * 0.35, smoothU)
         );
         break;
       }
 
       case 'plane_runway_takeoff': {
-        // Parallel runway chase tracking shot
         const angle = THREE.MathUtils.lerp(-Math.PI * 0.68, -Math.PI * 0.35, smoothU);
         const radius = span * 1.1;
         this.camera.fov = 44;
-        this.camera.position.set(
+        localCam.set(
           Math.cos(angle) * radius,
-          h * 0.38 + smoothU * h * 0.6 + subjectYOffset,
+          h * 0.38 + smoothU * h * 0.6 + subjectBobY,
           Math.sin(angle) * radius
         );
-        this.controls.target.set(0, h * 0.5 + subjectYOffset, -d * 0.12);
+        localTarget.set(0, h * 0.5 + subjectBobY, -d * 0.12);
         break;
       }
 
@@ -442,6 +471,7 @@ export class CameraDirector {
         break;
     }
 
+    this._applySubjectFrame(localCam, localTarget);
     this.camera.updateProjectionMatrix();
     this.camera.lookAt(this.controls.target);
   }

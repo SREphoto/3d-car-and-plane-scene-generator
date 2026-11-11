@@ -8,6 +8,17 @@ import { VehicleDynamics } from './VehicleDynamics.js';
 import { CameraDirector } from './CameraDirector.js';
 import { CarMaterialEnhancer } from './CarMaterialEnhancer.js';
 import { PostProcessingPipeline } from './PostProcessingPipeline.js';
+import { VehicleController } from './VehicleController.js';
+
+const NIGHT_PHOTOGRAMMETRY_SCENES = new Set(['la_night_city']);
+const DAY_PHOTOGRAMMETRY_SCENES = new Set([
+  'canadian_downtown',
+  'vatican_city',
+  'building_interior_scan',
+  'construction_site',
+  'eglise_saint_polycarpe',
+  'kent_lumber_yard',
+]);
 
 export class SceneManager {
   constructor(canvas, callbacks = {}) {
@@ -24,19 +35,19 @@ export class SceneManager {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.04;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#010204'); // Deep pitch-black cinematic background
+    this.scene.background = new THREE.Color('#010204');
 
-    this.camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 800);
+    this.camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 3000);
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
     this.controls.maxPolarAngle = Math.PI * 0.495;
-    this.controls.minDistance = 1.2;
-    this.controls.maxDistance = 140;
+    this.controls.minDistance = 1.1;
+    this.controls.maxDistance = 420;
 
     // GLTF + Draco loader
     this.gltfLoader = new GLTFLoader();
@@ -56,8 +67,35 @@ export class SceneManager {
     this.weatherSystem = new WeatherSystem(this.scene);
     this.vehicleDynamics = new VehicleDynamics(this.scene);
     this.cameraDirector = new CameraDirector(this.camera, this.controls);
+    this.cameraDirector.bindSubjectHolder(this.subjectHolder);
     this.enhancer = new CarMaterialEnhancer();
     this.pipeline = new PostProcessingPipeline(this.renderer, this.scene, this.camera);
+
+    // Interactive 3D Vehicle Placement & Live WASD Drive/Fly Controller
+    this.vehicleController = new VehicleController({
+      scene: this.scene,
+      camera: this.camera,
+      canvas: this.canvas,
+      orbitControls: this.controls,
+      subjectHolder: this.subjectHolder,
+      locationHolder: this.locationHolder,
+      onPoseChange: (pose) => {
+        this.lightingRig.updateSubjectFocus(this.subjectHolder.position);
+        if (this.callbacks.onVehiclePoseChange) {
+          this.callbacks.onVehiclePoseChange(pose);
+        }
+      },
+      onProbeRefreshNeeded: (pos) => {
+        this.refreshSceneReflectionProbe(pos);
+      },
+      onModeChange: (mode) => {
+        if (this.callbacks.onTransformModeChange) {
+          this.callbacks.onTransformModeChange(mode);
+        }
+      },
+    });
+    this.vehicleController.cameraDirectorAllowsOrbit = () =>
+      this.cameraDirector.activeShotId === 'free_orbit';
 
     this.cameraDirector.onShotChangeCallback = (shotId, isSeq, clipIdx) => {
       if (this.callbacks.onShotChange) {
@@ -65,11 +103,13 @@ export class SceneManager {
       }
     };
 
-    this.activeSceneId = 'dark_void'; // Start in the gorgeous Obsidian Blackout Stage!
+    this.activeSceneId = 'interior_7';
+    this.activeSceneItem = null;
     this.activeMode = 'cars';
     this.subjectCache = new Map();
     this.locationCache = new Map();
     this.loadToken = 0;
+    this.sceneLoadToken = 0;
     this.windTunnelFan = null;
 
     this.clock = new THREE.Clock();
@@ -93,11 +133,23 @@ export class SceneManager {
     this.camera.updateProjectionMatrix();
   }
 
+  refreshSceneReflectionProbe(pos = this.subjectHolder.position) {
+    if (!this.lightingRig) return;
+    if (this.activeSceneItem && this.activeSceneItem.type === 'glb') {
+      this.lightingRig.captureSceneProbe(pos, [
+        this.subjectHolder,
+        this.vehicleController?.helper,
+        this.vehicleDynamics?.fxGroup,
+      ]);
+    }
+  }
+
   /**
-   * Loads, normalizes, and enhances a Car or Plane GLB model
+   * Loads, normalizes, and enhances a Car, Plane, or Part GLB model
    */
   async loadSubject(item, mode = 'cars') {
     this.activeMode = mode;
+    this.vehicleController.setSubjectType(mode);
     const token = ++this.loadToken;
     if (this.callbacks.onLoadingChange) {
       this.callbacks.onLoadingChange({ loading: true, progress: 0, label: item.name });
@@ -111,6 +163,8 @@ export class SceneManager {
         const cached = this.subjectCache.get(item.id);
         rootGroup = cached.rootGroup;
         bounds = cached.bounds;
+        // Re-bind enhancer references to cached rootGroup materials so paint/headlight controls apply to active vehicle
+        this.enhancer.enhance(rootGroup, mode, bounds);
       } else {
         const gltf = await new Promise((resolve, reject) => {
           this.gltfLoader.load(
@@ -128,14 +182,17 @@ export class SceneManager {
 
         const rawModel = gltf.scene;
 
-        // Strip any stray backdrop/shadow-catcher floor planes, collision hulls, or hitboxes baked into Sketchfab exports
+        // Strip stray backdrop/shadow-catcher floor planes, collision hulls, or hitboxes baked into Sketchfab exports
         rawModel.traverse((child) => {
           if (child.isMesh) {
             const mName = (child.name || '').toLowerCase();
+            const pName = (child.parent?.name || '').toLowerCase();
             const matName = (child.material?.name || '').toLowerCase();
             if (
               mName.includes('ground_ao') ||
               matName.includes('ground_ao') ||
+              mName.includes('groundshadow') ||
+              pName.includes('groundshadow') ||
               mName.includes('shadow_plane') ||
               mName.includes('floor_plane') ||
               mName.includes('convcolonly') ||
@@ -143,14 +200,19 @@ export class SceneManager {
               mName.includes('hitbox') ||
               mName.includes('bounding') ||
               mName.includes('ucx_') ||
-              mName.includes('ubx_')
+              mName.includes('ubx_') ||
+              mName === 'icosphere' ||
+              mName.startsWith('icosphere.') ||
+              pName === 'icosphere' ||
+              matName.includes('f14_lights') ||
+              (mode === 'planes' && mName === 'lights')
             ) {
               child.visible = false;
             }
           }
         });
 
-        // 2. Orientation normalization
+        // Orientation normalization
         if (item.modelRotation) {
           if (item.rotationOrder) rawModel.rotation.order = item.rotationOrder;
           rawModel.rotation.set(
@@ -160,18 +222,14 @@ export class SceneManager {
           );
           rawModel.updateMatrixWorld(true);
         } else if (mode === 'cars') {
-          // Automatic automotive orientation normalization:
-          // A car's length is ALWAYS its longest axis, height is ALWAYS its shortest axis.
           const testBox = new THREE.Box3().setFromObject(rawModel);
           const testSize = new THREE.Vector3();
           testBox.getSize(testSize);
 
           if (testSize.y > testSize.z * 1.25 && testSize.y > testSize.x * 1.25) {
-            // Model was exported standing vertically on its nose (length along Y)
             rawModel.rotation.x = -Math.PI / 2;
             rawModel.updateMatrixWorld(true);
           } else if (testSize.x > testSize.z * 1.25 && testSize.x > testSize.y * 1.25) {
-            // Model was exported 90 deg sideways (length along X)
             rawModel.rotation.y = Math.PI / 2;
             rawModel.updateMatrixWorld(true);
           }
@@ -180,33 +238,56 @@ export class SceneManager {
           const testSize = new THREE.Vector3();
           testBox.getSize(testSize);
           if (testSize.x > testSize.z * 1.35) {
-            // Fuselage along X, rotate 90 deg on Y so nose points along -Z
             rawModel.rotation.y = Math.PI / 2;
             rawModel.updateMatrixWorld(true);
           }
         }
 
-        // Compute bounding box of visible meshes after orientation correction
-        const box = new THREE.Box3().setFromObject(rawModel);
+        // Compute visible bounding box ONLY (ignoring hidden GroundShadow / collision meshes!)
+        const box = new THREE.Box3();
+        const meshBox = new THREE.Box3();
+        rawModel.updateMatrixWorld(true);
+        rawModel.traverse((c) => {
+          if (c.isMesh && c.visible && c.geometry) {
+            c.geometry.computeBoundingBox();
+            if (c.geometry.boundingBox) {
+              meshBox.copy(c.geometry.boundingBox).applyMatrix4(c.matrixWorld);
+              box.union(meshBox);
+            }
+          }
+        });
+        if (box.isEmpty()) {
+          box.setFromObject(rawModel);
+        }
+
         const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
         box.getSize(size);
-        box.getCenter(center);
 
         const maxHoriz = Math.max(size.x, size.z, 0.001);
-        const targetSpan = item.targetSize || (mode === 'planes' ? 26.0 : 4.8);
+        const targetSpan = item.targetSize || (mode === 'planes' ? 25.0 : mode === 'parts' ? 0.65 : 4.75);
         const scale = targetSpan / maxHoriz;
 
         rootGroup = new THREE.Group();
         rawModel.scale.setScalar(scale);
+        rawModel.updateMatrixWorld(true);
 
-        // Recompute scaled box so bottom touches Y = 0.000 and X,Z = 0
-        const scaledBox = new THREE.Box3().setFromObject(rawModel);
+        const scaledBox = new THREE.Box3();
+        rawModel.traverse((c) => {
+          if (c.isMesh && c.visible && c.geometry?.boundingBox) {
+            meshBox.copy(c.geometry.boundingBox).applyMatrix4(c.matrixWorld);
+            scaledBox.union(meshBox);
+          }
+        });
+        if (scaledBox.isEmpty()) {
+          scaledBox.setFromObject(rawModel);
+        }
+
         const scaledCenter = new THREE.Vector3();
         const scaledSize = new THREE.Vector3();
         scaledBox.getCenter(scaledCenter);
         scaledBox.getSize(scaledSize);
 
+        // Ground vehicle bottom flush at Y = 0.000 and center horizontally at (0, 0)
         rawModel.position.set(-scaledCenter.x, -scaledBox.min.y, -scaledCenter.z);
         rootGroup.add(rawModel);
 
@@ -216,26 +297,38 @@ export class SceneManager {
           d: scaledSize.z,
         };
 
-        // AAA Automotive Material Shading Upgrade:
-        // Converts flat, chalky GLTF materials to high-gloss clearcoat MeshPhysicalMaterial with wet reflections
         this.enhancer.enhance(rootGroup, mode, bounds);
-
-        // Attach dynamic Snow Accumulation & Wetness shader to subject materials
         this.weatherSystem.applySnowShaderToRoot(rootGroup);
-
         this.subjectCache.set(item.id, { rootGroup, bounds });
       }
 
       if (token !== this.loadToken) return;
 
-      // Clear previous subject and mount new subject
       while (this.subjectHolder.children.length > 0) {
         this.subjectHolder.remove(this.subjectHolder.children[0]);
       }
       this.subjectHolder.add(rootGroup);
 
-      this.vehicleDynamics.bindSubject(rootGroup, mode, bounds);
+      // Hide ground contact shadow when flying high in Cloud Deck
+      const isCloudFlight = this.activeSceneId === 'cloud_deck';
+      const activeProfile = this.lightingRig ? undefined : null;
+      this.enhancer.setGroundContactVisible(
+        !isCloudFlight,
+        this.activeSceneShadowOpacity ?? 0.44
+      );
+
+      if (mode === 'cars' && this.vehicleController.snapToGround) {
+        this.vehicleController.snapSubjectToGround();
+      }
+
+      const modeChanged = this.currentMode !== mode;
+      this.currentMode = mode;
+      this.vehicleDynamics.bindSubject(rootGroup, mode, bounds, this.subjectHolder);
       this.cameraDirector.setBounds(bounds, mode);
+      if (modeChanged) {
+        this.cameraDirector.resetToHeroIso();
+      }
+      this.lightingRig.updateSubjectFocus(this.subjectHolder.position);
 
       if (this.callbacks.onLoadingChange) {
         this.callbacks.onLoadingChange({ loading: false, progress: 100, label: '' });
@@ -249,20 +342,37 @@ export class SceneManager {
   }
 
   /**
-   * Switches between Dark Void, Wind Tunnel, Outdoor World, and Procedural Studios
+   * Switches between 3D GLB Cities/Garages, Outdoor Weather World, and Procedural Cinema Stages
    */
   async setScene(sceneItem) {
     this.activeSceneId = sceneItem.id;
+    this.activeSceneItem = sceneItem;
+    const sToken = ++this.sceneLoadToken;
     this.windTunnelFan = null;
 
-    // Clear imported location holder
     while (this.locationHolder.children.length > 0) {
       this.locationHolder.remove(this.locationHolder.children[0]);
     }
 
     const isOutdoor = sceneItem.type === 'outdoor';
     this.weatherSystem.setOutdoorVisible(isOutdoor);
-    this.lightingRig.setActiveProceduralScene(sceneItem.id);
+    const appliedProfile = this.lightingRig.setActiveProceduralScene(sceneItem.id);
+    this.activeSceneShadowOpacity = appliedProfile?.shadowCatcherOpacity ?? 0.42;
+
+    this.enhancer.setGroundContactVisible(
+      sceneItem.id !== 'cloud_deck',
+      this.activeSceneShadowOpacity
+    );
+
+    if (this.callbacks.onSceneLightingSync && appliedProfile) {
+      this.callbacks.onSceneLightingSync(this.lightingRig.state);
+    }
+
+    // Reset vehicle to scene's hero staging point when changing scenes
+    const spawn = sceneItem.spawn || { x: 0, y: 0, z: 0, yaw: 0 };
+    this.subjectHolder.position.set(spawn.x || 0, spawn.y || 0, spawn.z || 0);
+    this.subjectHolder.rotation.set(0, spawn.yaw || 0, 0);
+    this.lightingRig.updateSubjectFocus(this.subjectHolder.position);
 
     if (sceneItem.type === 'glb' && sceneItem.url) {
       if (this.callbacks.onLoadingChange) {
@@ -293,7 +403,6 @@ export class SceneManager {
 
           const rawLoc = gltf.scene;
 
-          // Location specific alignment and material calibrations:
           if (sceneItem.id === 'wind_tunnel') {
             rawLoc.traverse((child) => {
               if (child.name === 'Elice') {
@@ -307,18 +416,11 @@ export class SceneManager {
                 }
               }
             });
-
-            // The turntable floor 'Sol' is level at Y = 0.000
             locGroup = new THREE.Group();
             rawLoc.scale.setScalar(0.42);
             rawLoc.position.set(0, 0, 0);
             locGroup.add(rawLoc);
-            this.locationCache.set(sceneItem.id, locGroup);
           } else if (sceneItem.id === 'interior_7') {
-            // Architectural Loft Penthouse:
-            // Scaled by 1.65x so ceiling is a grand 5.7m and room is spacious.
-            // Placed so vehicle sits in the double-height panoramic window bay, framed by
-            // floor-to-ceiling glass on the left and skyline in front, completely clear of the mezzanine!
             rawLoc.traverse((child) => {
               if (child.isMesh) {
                 child.receiveShadow = true;
@@ -327,13 +429,11 @@ export class SceneManager {
                   child.material.envMapIntensity = 1.8;
                   const mName = (child.name || '').toLowerCase();
                   const matName = (child.material?.name || '').toLowerCase();
-                  // Polished architectural concrete/wood floor
                   if (mName === 'plane' || matName.includes('material.001')) {
                     child.material.roughness = 0.16;
-                    child.material.metalness = 0.20;
+                    child.material.metalness = 0.2;
                     child.material.envMapIntensity = 2.2;
                   }
-                  // Crystal clear optical glass windows looking out at city skyline
                   if (
                     mName.includes('plane.004') ||
                     mName.includes('cube029') ||
@@ -352,14 +452,9 @@ export class SceneManager {
             });
             locGroup = new THREE.Group();
             rawLoc.scale.setScalar(1.65);
-            // Shifting by (-0.74, 0, 3.63) places the car at (0,0,0) directly beside the panoramic glass windows!
             rawLoc.position.set(-0.74, 0.0, 3.63);
             locGroup.add(rawLoc);
-            this.locationCache.set(sceneItem.id, locGroup);
           } else if (sceneItem.id === 'car_garage') {
-            // Underground Performance Garage:
-            // Scaled by 1.55x (width 25.6m, depth 16m, height 7m).
-            // Pavement floor is at Y = 0.000 so car tires sit firmly on concrete (NO floating!).
             rawLoc.traverse((child) => {
               if (child.isMesh) {
                 child.receiveShadow = true;
@@ -375,38 +470,119 @@ export class SceneManager {
             });
             locGroup = new THREE.Group();
             rawLoc.scale.setScalar(1.55);
-            // Center garage at (1.908, 0, 0) with floor flush at Y = 0.000
             rawLoc.position.set(1.908, 0.0, 0.0);
             locGroup.add(rawLoc);
-            this.locationCache.set(sceneItem.id, locGroup);
           } else if (sceneItem.id === 'abandoned_vr_gallery') {
-            // Abandoned Concrete VR Gallery:
-            // Convert unlit MeshBasicMaterial to MeshStandardMaterial so baked concrete textures
-            // respond realistically to sunbeam shaft & scene lighting without washing out!
             rawLoc.traverse((child) => {
               if (child.isMesh) {
                 child.receiveShadow = true;
                 child.castShadow = true;
                 if (child.material) {
                   const oldMat = child.material;
+                  if (oldMat.map) oldMat.map.colorSpace = THREE.SRGBColorSpace;
                   child.material = new THREE.MeshStandardMaterial({
                     map: oldMat.map || null,
                     roughness: 0.88,
                     metalness: 0.04,
-                    envMapIntensity: 0.35,
+                    envMapIntensity: 0.4,
                   });
-                  if (oldMat.map) {
-                    oldMat.map.colorSpace = THREE.SRGBColorSpace;
-                  }
                 }
               }
             });
             locGroup = new THREE.Group();
             rawLoc.scale.setScalar(1.15);
-            // Center central gallery hall under the roof skylight beam directly at (0,0,0)
-            rawLoc.position.set(-5.60, 0.0, 8.56);
+            rawLoc.position.set(-5.6, 0.0, 8.56);
             locGroup.add(rawLoc);
-            this.locationCache.set(sceneItem.id, locGroup);
+          } else if (NIGHT_PHOTOGRAMMETRY_SCENES.has(sceneItem.id)) {
+            // Hybrid Night Photogrammetry Shader:
+            // Preserves self-luminous skyscraper windows & streetlamps via emissiveMap while
+            // allowing street asphalt to receive real car headlights, taillights, and shadows!
+            rawLoc.traverse((child) => {
+              if (!child.isMesh) return;
+              child.receiveShadow = true;
+              child.castShadow = false;
+              const mats = Array.isArray(child.material) ? child.material : [child.material];
+              const upgraded = mats.map((m) => {
+                if (!m) return m;
+                if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+                return new THREE.MeshStandardMaterial({
+                  map: m.map || null,
+                  emissive: new THREE.Color('#ffffff'),
+                  emissiveMap: m.map || null,
+                  emissiveIntensity: 0.76,
+                  roughness: 0.78,
+                  metalness: 0.08,
+                  envMapIntensity: 0.35,
+                });
+              });
+              child.material = Array.isArray(child.material) ? upgraded : upgraded[0];
+            });
+            locGroup = new THREE.Group();
+            const s = sceneItem.sceneScale || 1.0;
+            rawLoc.scale.setScalar(s);
+            if (sceneItem.sceneOffset) {
+              rawLoc.position.set(...sceneItem.sceneOffset);
+            }
+            locGroup.add(rawLoc);
+          } else if (DAY_PHOTOGRAMMETRY_SCENES.has(sceneItem.id)) {
+            // Sketchfab Shadeless / Unlit Photogrammetry Pipeline + 16x Anisotropic Filtering:
+            // Preserves 100% of baked 8K photo sharpness, mortar contrast, and real-world shadows
+            // without artificial directional-light washout, while VehicleDirectionalShadowCatcher
+            // and VehicleContactAOShadow ground the vehicle onto the cobblestones/asphalt.
+            const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+            rawLoc.traverse((child) => {
+              if (!child.isMesh) return;
+              child.receiveShadow = false;
+              child.castShadow = false;
+              const mats = Array.isArray(child.material) ? child.material : [child.material];
+              const upgraded = mats.map((m) => {
+                if (!m) return m;
+                const tex = m.map || m.emissiveMap || null;
+                if (tex) {
+                  tex.colorSpace = THREE.SRGBColorSpace;
+                  tex.anisotropy = maxAniso;
+                  tex.minFilter = THREE.LinearMipmapLinearFilter;
+                  tex.magFilter = THREE.LinearFilter;
+                  tex.generateMipmaps = true;
+                  tex.needsUpdate = true;
+                }
+                return new THREE.MeshBasicMaterial({
+                  map: tex,
+                  // Gentle 1.05 linear boost compensates for OutputPass ACES Filmic rolloff
+                  // so sunlit travertine & stone match Sketchfab's exact unlit brightness
+                  color: tex ? new THREE.Color(1.05, 1.05, 1.05) : (m.color || new THREE.Color('#cccccc')),
+                });
+              });
+              child.material = Array.isArray(child.material) ? upgraded : upgraded[0];
+            });
+            locGroup = new THREE.Group();
+            const s = sceneItem.sceneScale || 1.0;
+            rawLoc.scale.setScalar(s);
+            if (sceneItem.sceneOffset) {
+              rawLoc.position.set(...sceneItem.sceneOffset);
+            }
+            locGroup.add(rawLoc);
+          } else if (sceneItem.calibrated) {
+            // Pre-calibrated 1:1 metric scenes (F1 garages, repaired hangars/halls)
+            rawLoc.traverse((child) => {
+              if (child.isMesh) {
+                child.receiveShadow = true;
+                child.castShadow = true;
+                if (child.material) {
+                  if (child.material.map) {
+                    child.material.map.colorSpace = THREE.SRGBColorSpace;
+                  }
+                  child.material.envMapIntensity = 1.15;
+                }
+              }
+            });
+            locGroup = new THREE.Group();
+            const s = sceneItem.sceneScale || 1.0;
+            rawLoc.scale.setScalar(s);
+            if (sceneItem.sceneOffset) {
+              rawLoc.position.set(...sceneItem.sceneOffset);
+            }
+            locGroup.add(rawLoc);
           } else {
             rawLoc.traverse((child) => {
               if (child.isMesh) {
@@ -420,10 +596,7 @@ export class SceneManager {
 
             const box = new THREE.Box3().setFromObject(rawLoc);
             const size = new THREE.Vector3();
-            const center = new THREE.Vector3();
             box.getSize(size);
-            box.getCenter(center);
-
             const maxSpan = Math.max(size.x, size.z, 0.001);
             const targetSpan = sceneItem.targetSpan || 30.0;
             const scale = targetSpan / maxSpan;
@@ -437,19 +610,43 @@ export class SceneManager {
 
             rawLoc.position.set(-scaledCenter.x, -scaledBox.min.y - 0.02, -scaledCenter.z);
             locGroup.add(rawLoc);
-            this.locationCache.set(sceneItem.id, locGroup);
           }
+
+          const maxSceneAniso = this.renderer.capabilities.getMaxAnisotropy();
+          locGroup.traverse((c) => {
+            if (!c.isMesh || !c.material) return;
+            const ms = Array.isArray(c.material) ? c.material : [c.material];
+            for (const mat of ms) {
+              for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']) {
+                if (mat && mat[k] && mat[k].anisotropy < maxSceneAniso) {
+                  mat[k].anisotropy = maxSceneAniso;
+                  mat[k].needsUpdate = true;
+                }
+              }
+            }
+          });
+
+          this.locationCache.set(sceneItem.id, locGroup);
         }
 
-        if (this.activeSceneId === sceneItem.id) {
+        if (sToken === this.sceneLoadToken && this.activeSceneId === sceneItem.id) {
           this.locationHolder.add(locGroup);
-          this.cameraDirector.setSceneId(sceneItem.id);
-          // If wind tunnel, bind fan
+          locGroup.updateMatrixWorld(true);
+
           if (sceneItem.id === 'wind_tunnel') {
             locGroup.traverse((child) => {
               if (child.name === 'Elice') this.windTunnelFan = child;
             });
           }
+
+          // Snap vehicle onto exact road/floor height at spawn, then capture real 360° scene IBL probe!
+          if (this.activeMode === 'cars' && this.vehicleController.snapToGround) {
+            this.vehicleController.snapSubjectToGround();
+          }
+          this.lightingRig.updateSubjectFocus(this.subjectHolder.position);
+          this.refreshSceneReflectionProbe(this.subjectHolder.position);
+          this.cameraDirector.setSceneId(sceneItem.id);
+          this.vehicleController._emitPose();
         }
       } catch (err) {
         console.error('Failed to load location GLB:', err);
@@ -458,16 +655,49 @@ export class SceneManager {
           this.callbacks.onLoadingChange({ loading: false, progress: 100, label: '' });
         }
       }
+    } else {
+      this.cameraDirector.setSceneId(sceneItem.id);
+      this.vehicleController._emitPose();
     }
   }
 
   applySceneFilmPreset(presetId) {
     this.lightingRig.applySceneFilmPreset(presetId);
+    if (this.callbacks.onSceneLightingSync) {
+      this.callbacks.onSceneLightingSync({ ...this.lightingRig.state });
+    }
+  }
+
+  // --- Vehicle Placement & Driving API for UI ---
+  setTransformMode(mode) {
+    this.vehicleController.setMode(mode);
+  }
+
+  resetVehiclePose() {
+    const spawn = this.activeSceneItem?.spawn || { x: 0, y: 0, z: 0, yaw: 0 };
+    this.vehicleController.resetPose(spawn);
+    this.cameraDirector.resetToHeroIso();
+  }
+
+  setSnapToGround(enabled) {
+    this.vehicleController.setSnapToGround(enabled);
+  }
+
+  setAlignToSlope(enabled) {
+    this.vehicleController.setAlignToSlope(enabled);
+  }
+
+  setVehiclePose(pose) {
+    this.vehicleController.setPose(pose);
   }
 
   // --- Real-Time Customization Handlers for UI ---
   setCarPaintColor(hex) {
     this.enhancer.setPaintColor(hex);
+  }
+
+  resetFactoryPaint() {
+    this.enhancer.resetFactoryPaint();
   }
 
   setCarPaintFinish(finish) {
@@ -497,7 +727,12 @@ export class SceneManager {
     const dt = Math.min(0.05, this.clock.getDelta());
     this.elapsed += dt;
 
-    // 1. Sample Web Audio FFT & Beat-Sync if MusicEngine is bound
+    const isRecording = Boolean(this.videoExporter && this.videoExporter.isRecording);
+    if (this.vehicleController.recordingSuppressed !== isRecording) {
+      this.vehicleController.setRecordingSuppressed(isRecording);
+    }
+
+    // 1. Sample Web Audio FFT & Beat-Sync
     if (this.musicEngine) {
       const audioSample = this.musicEngine.sampleAudioFrame();
       this.lightingRig.beatPulse = audioSample.bassPulse;
@@ -509,12 +744,15 @@ export class SceneManager {
       }
     }
 
-    // 2. Rotate Wind Tunnel Fan if in Wind Tunnel scene (aerodynamically correct propeller rotation around its axle shaft)
+    // 2. Rotate Wind Tunnel Fan
     if (this.activeSceneId === 'wind_tunnel' && this.windTunnelFan) {
       this.windTunnelFan.rotateX(-dt * 22.0);
     }
 
-    // 3. Update Outdoor Weather & 24h Time-of-Day
+    // 3. Update Live WASD Vehicle Driving / Flying
+    this.vehicleController.update(dt);
+
+    // 4. Update Outdoor Weather & 24h Time-of-Day
     const isOutdoor = this.activeSceneId === 'outdoor_world';
     const prevLightning = this.weatherSystem.lightningFlash;
     this.weatherSystem.update(dt, this.elapsed, this.lightingRig, isOutdoor);
@@ -534,28 +772,29 @@ export class SceneManager {
       });
     }
 
-    // 4. Update Studio Lighting Rig & Streamlines
+    // 5. Update Studio Lighting Rig
     this.lightingRig.update(dt, this.elapsed, this.vehicleDynamics.state.wheelSpin);
 
-    // 5. Update Vehicle & Plane Live Dynamics
+    // 6. Update Vehicle & Plane Live Dynamics
     this.vehicleDynamics.update(
       dt,
       this.elapsed,
       this.weatherSystem.roadTexture,
-      this.activeSceneId
+      this.activeSceneId,
+      this.vehicleController.speed
     );
 
-    // 6. Update Cinematography Camera Director
-    const subjectY = this.vehicleDynamics.subjectRoot
+    // 7. Update Cinematography Camera Director (locked to movable subjectHolder!)
+    const subjectBobY = this.vehicleDynamics.subjectRoot
       ? this.vehicleDynamics.subjectRoot.position.y
       : 0;
-    this.cameraDirector.update(dt, subjectY);
+    this.cameraDirector.update(dt, subjectBobY);
 
-    // 7. Render with AAA Post-Processing Pipeline (Bloom + Cinematic Grading + Vignette)
+    // 8. Render with AAA Post-Processing Pipeline (ACES Filmic -> Film Grade -> Vignette)
     this.pipeline.render(dt);
 
-    // 8. Capture frame into Social Media Video Exporter if recording
-    if (this.videoExporter && this.videoExporter.isRecording) {
+    // 9. Capture frame into Social Media Video Exporter if recording (gizmo guaranteed hidden!)
+    if (isRecording) {
       this.videoExporter.captureFrame();
     }
   }
@@ -563,6 +802,7 @@ export class SceneManager {
   dispose() {
     this.disposed = true;
     window.removeEventListener('resize', this._resizeHandler);
+    this.vehicleController.dispose();
     this.renderer.dispose();
   }
 }

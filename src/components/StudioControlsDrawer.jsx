@@ -23,6 +23,9 @@ import {
   Palette,
   Moon,
   Droplets,
+  Move,
+  Gamepad2,
+  MousePointer2,
 } from 'lucide-react';
 import {
   WEATHER_PRESETS,
@@ -74,10 +77,21 @@ export function StudioControlsDrawer({
   onChangePaintColor,
   paintFinish = 'metallic',
   onChangePaintFinish,
-  underglowOn = true,
+  onResetFactoryPaint,
+  underglowOn = false,
   onToggleUnderglow,
   underglowColor = '#00f5d4',
   onChangeUnderglowColor,
+  // Vehicle Placement & Motion
+  transformMode = 'orbit',
+  onChangeTransformMode,
+  vehiclePose = { x: 0, y: 0, z: 0, yawDeg: 0 },
+  onChangeVehiclePose,
+  snapToGround = true,
+  onToggleSnapToGround,
+  alignToSlope = false,
+  onToggleAlignToSlope,
+  onResetVehiclePose,
   // Post-FX
   postFx = { bloom: 0.16, vignette: 0.3, contrast: 1.08, blackLevel: 0.01 },
   onChangePostFx,
@@ -108,18 +122,25 @@ export function StudioControlsDrawer({
       ? SCENE_FILM_PRESETS[activeSceneId]
       : null;
 
+  const isGarageScene =
+    activeSceneId === 'car_garage' ||
+    activeSceneId === 'red_bull_f1_garage' ||
+    activeSceneId === 'f1_pit_garage' ||
+    activeSceneId === 'desert_workshop_garage' ||
+    activeSceneId === 'cyberpunk_garage';
+
   const availableShots = [...CAMERA_SHOTS]
     .filter((s) => s.modes.includes(mode))
     .sort((a, b) => {
       // Prioritize shots tailored to the active scene
       const aMatch =
         (activeSceneId === 'interior_7' && a.id.startsWith('loft_')) ||
-        (activeSceneId === 'car_garage' && a.id.startsWith('garage_')) ||
+        (isGarageScene && a.id.startsWith('garage_')) ||
         (activeSceneId === 'abandoned_vr_gallery' && a.id.startsWith('gallery_')) ||
         (activeSceneId === 'wind_tunnel' && a.id.startsWith('wind_'));
       const bMatch =
         (activeSceneId === 'interior_7' && b.id.startsWith('loft_')) ||
-        (activeSceneId === 'car_garage' && b.id.startsWith('garage_')) ||
+        (isGarageScene && b.id.startsWith('garage_')) ||
         (activeSceneId === 'abandoned_vr_gallery' && b.id.startsWith('gallery_')) ||
         (activeSceneId === 'wind_tunnel' && b.id.startsWith('wind_'));
       if (aMatch && !bMatch) return -1;
@@ -236,7 +257,27 @@ export function StudioControlsDrawer({
             }}
           >
             <Palette size={13} />
-            <span>PAINT & FINISH</span>
+            <span>PAINT</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('move')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 9px',
+              background: activeTab === 'move' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+              border: `1px solid ${activeTab === 'move' ? '#34d399' : 'transparent'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: activeTab === 'move' ? '#34d399' : 'var(--text-secondary)',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <Move size={13} />
+            <span>MOVE / DRIVE</span>
           </button>
 
           <button
@@ -816,9 +857,253 @@ export function StudioControlsDrawer({
           </>
         )}
 
+        {/* ================= TAB: VEHICLE PLACEMENT & LIVE DRIVE ================= */}
+        {activeTab === 'move' && (
+          <>
+            <div
+              style={{
+                background: 'linear-gradient(180deg, rgba(16, 185, 129, 0.1), rgba(15, 23, 42, 0.45))',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid rgba(52, 211, 153, 0.28)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#34d399', letterSpacing: '0.5px' }}>
+                INTERACTIVE VEHICLE MOVEMENT & DRIVING
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                {[
+                  { id: 'orbit', name: 'Orbit Camera (Esc)', icon: MousePointer2 },
+                  { id: 'translate', name: '3D Move Gizmo (W)', icon: Move },
+                  { id: 'rotate', name: 'Rotate Heading (E)', icon: RotateCw },
+                  { id: 'drive', name: 'Live WASD Drive (G)', icon: Gamepad2 },
+                ].map((m) => {
+                  const Icon = m.icon;
+                  const active = transformMode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => onChangeTransformMode && onChangeTransformMode(m.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '7px',
+                        padding: '10px',
+                        background: active ? 'rgba(16, 185, 129, 0.22)' : 'rgba(15, 23, 42, 0.8)',
+                        border: `1px solid ${active ? '#34d399' : 'var(--border-subtle)'}`,
+                        borderRadius: '6px',
+                        color: active ? '#ffffff' : 'var(--text-secondary)',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Icon size={14} color={active ? '#34d399' : '#94a3b8'} />
+                      <span>{m.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: '1.45', paddingTop: '2px' }}>
+                • <strong>Shift + Click</strong> any street or floor surface to place the vehicle there immediately.<br />
+                • In <strong>Live Drive (G)</strong> mode, use <strong>WASD</strong> or <strong>Arrow Keys</strong> to steer &amp; drive (<strong>Shift</strong> boost, <strong>Space / C</strong> plane altitude).<br />
+                • Gizmo handles hide automatically during <strong>Record Reel</strong>.
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
+                  FINE POSITION & HEADING
+                </span>
+                <button
+                  onClick={() => onResetVehiclePose && onResetVehiclePose()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '4px 9px',
+                    background: 'rgba(56, 189, 248, 0.14)',
+                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                    borderRadius: '5px',
+                    color: 'var(--accent-cyan)',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <RefreshCw size={11} />
+                  <span>Reset to Spawn</span>
+                </button>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  <span>Lateral X Position</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{(vehiclePose.x || 0).toFixed(2)}m</span>
+                </div>
+                <input
+                  type="range"
+                  min="-40"
+                  max="40"
+                  step="0.1"
+                  value={vehiclePose.x || 0}
+                  onChange={(e) => onChangeVehiclePose && onChangeVehiclePose({ x: parseFloat(e.target.value) })}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  <span>Forward / Back Z Position</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{(vehiclePose.z || 0).toFixed(2)}m</span>
+                </div>
+                <input
+                  type="range"
+                  min="-40"
+                  max="40"
+                  step="0.1"
+                  value={vehiclePose.z || 0}
+                  onChange={(e) => onChangeVehiclePose && onChangeVehiclePose({ z: parseFloat(e.target.value) })}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  <span>Elevation Y / Altitude</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{(vehiclePose.y || 0).toFixed(2)}m</span>
+                </div>
+                <input
+                  type="range"
+                  min="-5"
+                  max="25"
+                  step="0.05"
+                  value={vehiclePose.y || 0}
+                  onChange={(e) => onChangeVehiclePose && onChangeVehiclePose({ y: parseFloat(e.target.value) })}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  <span>Heading Yaw Angle</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round(vehiclePose.yawDeg || 0)}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="1"
+                  value={Math.round(vehiclePose.yawDeg || 0)}
+                  onChange={(e) =>
+                    onChangeVehiclePose &&
+                    onChangeVehiclePose({ yaw: (parseFloat(e.target.value) * Math.PI) / 180 })
+                  }
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Auto-Snap Tires to Road / Floor
+                </span>
+                <button
+                  onClick={onToggleSnapToGround}
+                  style={{
+                    padding: '4px 10px',
+                    background: snapToGround ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    border: `1px solid ${snapToGround ? '#34d399' : 'var(--border-subtle)'}`,
+                    borderRadius: '6px',
+                    color: snapToGround ? '#34d399' : 'var(--text-muted)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {snapToGround ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Align Pitch/Roll to Road Slope
+                </span>
+                <button
+                  onClick={onToggleAlignToSlope}
+                  style={{
+                    padding: '4px 10px',
+                    background: alignToSlope ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    border: `1px solid ${alignToSlope ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                    borderRadius: '6px',
+                    color: alignToSlope ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {alignToSlope ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
         {/* ================= TAB: PAINT & SHADING CUSTOMIZER ================= */}
         {activeTab === 'paint' && (
           <>
+            {/* Restore Factory Livery / Original Paint */}
+            <div
+              style={{
+                background: 'linear-gradient(180deg, rgba(192, 132, 252, 0.1), rgba(15, 23, 42, 0.45))',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid rgba(192, 132, 252, 0.28)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#e9d5ff' }}>
+                  FACTORY RACING LIVERY &amp; OEM PAINT
+                </div>
+                <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+                  Sponsor decals &amp; multi-color liveries stay active until resprayed.
+                </div>
+              </div>
+              <button
+                onClick={() => onResetFactoryPaint && onResetFactoryPaint()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '7px 11px',
+                  background: 'rgba(192, 132, 252, 0.22)',
+                  border: '1px solid #c084fc',
+                  borderRadius: '6px',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <RefreshCw size={12} />
+                <span>Restore Livery</span>
+              </button>
+            </div>
             {/* Body Finish Selector */}
             <div
               style={{

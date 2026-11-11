@@ -29,7 +29,7 @@ export default function App() {
   const [musicOpen, setMusicOpen] = useState(true);
 
   // Aspect Ratio & Safe Frame
-  const [aspectRatio, setAspectRatio] = useState('9:16');
+  const [aspectRatio, setAspectRatio] = useState('16:9');
   const [safeFrameVisible, setSafeFrameVisible] = useState(true);
 
   // Weather & 24h Time-of-Day
@@ -80,6 +80,12 @@ export default function App() {
     blackLevel: 0.01,
   });
 
+  // Interactive Vehicle Placement & Live Drive Mode
+  const [transformMode, setTransformMode] = useState('orbit');
+  const [vehiclePose, setVehiclePose] = useState({ x: 0, y: 0, z: 0, yaw: 0, yawDeg: 0 });
+  const [snapToGround, setSnapToGround] = useState(true);
+  const [alignToSlope, setAlignToSlope] = useState(false);
+
   // Cinematography & Reel Sequencer
   const [activeShotId, setActiveShotId] = useState('free_orbit');
   const [shotSpeed, setShotSpeed] = useState(1.0);
@@ -129,6 +135,15 @@ export default function App() {
       onAudioFrame: ({ bars }) => {
         setAudioBars(bars);
       },
+      onVehiclePoseChange: (pose) => {
+        setVehiclePose(pose);
+      },
+      onTransformModeChange: (nextMode) => {
+        setTransformMode(nextMode);
+      },
+      onSceneLightingSync: (synced) => {
+        setLightingState((prev) => ({ ...prev, ...synced }));
+      },
     });
     sm.musicEngine = music;
     sm.videoExporter = exporter;
@@ -177,9 +192,23 @@ export default function App() {
         : PARTS_CATALOG;
     const firstSubject = catalog[0];
     setActiveSubject(firstSubject);
-    if (sceneManagerRef.current && firstSubject) {
-      sceneManagerRef.current.loadSubject(firstSubject, newMode);
-      sceneManagerRef.current.cameraDirector.resetToHeroIso();
+
+    let targetScene = activeScene;
+    if (!activeScene?.modes?.includes(newMode)) {
+      targetScene =
+        (newMode === 'planes' && SCENES_CATALOG.find((s) => s.id === 'outdoor_world')) ||
+        SCENES_CATALOG.find((s) => s.modes?.includes(newMode)) ||
+        activeScene;
+      setActiveScene(targetScene);
+    }
+
+    if (sceneManagerRef.current) {
+      if (targetScene && targetScene.id !== activeScene?.id) {
+        sceneManagerRef.current.setScene(targetScene);
+      }
+      if (firstSubject) {
+        sceneManagerRef.current.loadSubject(firstSubject, newMode);
+      }
     }
   };
 
@@ -305,6 +334,47 @@ export default function App() {
     setPaintFinish(finish);
     if (sceneManagerRef.current) {
       sceneManagerRef.current.setCarPaintFinish(finish);
+    }
+  };
+
+  const handleResetFactoryPaint = () => {
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.resetFactoryPaint();
+    }
+  };
+
+  const handleChangeTransformMode = (nextMode) => {
+    setTransformMode(nextMode);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setTransformMode(nextMode);
+    }
+  };
+
+  const handleResetVehiclePose = () => {
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.resetVehiclePose();
+    }
+  };
+
+  const handleChangeVehiclePose = (partial) => {
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setVehiclePose(partial);
+    }
+  };
+
+  const handleToggleSnapToGround = () => {
+    const next = !snapToGround;
+    setSnapToGround(next);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setSnapToGround(next);
+    }
+  };
+
+  const handleToggleAlignToSlope = () => {
+    const next = !alignToSlope;
+    setAlignToSlope(next);
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setAlignToSlope(next);
     }
   };
 
@@ -529,6 +599,46 @@ export default function App() {
         </div>
       )}
 
+      {/* Live Drive / Gizmo HUD Banner (auto-hidden when recording!) */}
+      {!isRecording && transformMode !== 'orbit' && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: musicOpen ? '92px' : '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 32,
+            background: 'rgba(6, 10, 18, 0.88)',
+            backdropFilter: 'blur(14px)',
+            border: `1px solid ${transformMode === 'drive' ? 'rgba(52, 211, 153, 0.5)' : 'rgba(56, 189, 248, 0.45)'}`,
+            borderRadius: '999px',
+            padding: '6px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
+            pointerEvents: 'none',
+          }}
+        >
+          <span
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: transformMode === 'drive' ? '#34d399' : '#38bdf8',
+              boxShadow: `0 0 8px ${transformMode === 'drive' ? '#34d399' : '#38bdf8'}`,
+            }}
+          />
+          <span style={{ fontSize: '11px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#f8fafc', letterSpacing: '0.4px' }}>
+            {transformMode === 'drive'
+              ? 'LIVE DRIVE ACTIVE • WASD / ARROWS TO DRIVE • SHIFT BOOST • SPACE/C ALTITUDE • ESC EXIT'
+              : transformMode === 'translate'
+              ? 'MOVE GIZMO (W) • DRAG ARROWS OR SHIFT+CLICK ROAD TO PLACE • ESC ORBIT'
+              : 'ROTATE HEADING (E) • DRAG RING TO AIM VEHICLE • ESC ORBIT'}
+          </span>
+        </div>
+      )}
+
       {/* Top Bar */}
       <TopBar
         mode={mode}
@@ -551,6 +661,9 @@ export default function App() {
         setRightOpen={setRightOpen}
         musicOpen={musicOpen}
         setMusicOpen={setMusicOpen}
+        transformMode={transformMode}
+        onChangeTransformMode={handleChangeTransformMode}
+        onResetVehiclePose={handleResetVehiclePose}
       />
 
       {/* Left Drawer: Model & Scene Browser */}
@@ -598,10 +711,21 @@ export default function App() {
         onChangePaintColor={handleChangePaintColor}
         paintFinish={paintFinish}
         onChangePaintFinish={handleChangePaintFinish}
+        onResetFactoryPaint={handleResetFactoryPaint}
         underglowOn={underglowOn}
         onToggleUnderglow={handleToggleUnderglow}
         underglowColor={underglowColor}
         onChangeUnderglowColor={handleChangeUnderglowColor}
+        // Vehicle Placement & Motion
+        transformMode={transformMode}
+        onChangeTransformMode={handleChangeTransformMode}
+        vehiclePose={vehiclePose}
+        onChangeVehiclePose={handleChangeVehiclePose}
+        snapToGround={snapToGround}
+        onToggleSnapToGround={handleToggleSnapToGround}
+        alignToSlope={alignToSlope}
+        onToggleAlignToSlope={handleToggleAlignToSlope}
+        onResetVehiclePose={handleResetVehiclePose}
         postFx={postFx}
         onChangePostFx={handleChangePostFx}
         // Camera & Sequencer
