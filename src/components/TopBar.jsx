@@ -4,6 +4,7 @@ import {
   Plane,
   Wrench,
   Camera,
+  Aperture,
   Music,
   Sliders,
   Layers,
@@ -58,6 +59,10 @@ export function TopBar({
   transformMode = 'orbit',
   onChangeTransformMode,
   onResetVehiclePose,
+  lensState = {},
+  cameraLenses = [],
+  onSelectLens,
+  onOpenOptics,
 }) {
   const WeatherIcon = WEATHER_ICONS[activeWeather] || Sun;
 
@@ -278,6 +283,68 @@ export function TopBar({
             <RefreshCw size={11} />
           </button>
         </div>
+
+        {/* Quick Physical Camera Lens & Optical DoF Pill */}
+        {cameraLenses.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              background: 'rgba(0, 0, 0, 0.5)',
+              padding: '2px',
+              borderRadius: 'var(--radius-sm)',
+              border: `1px solid ${lensState.dofEnabled ? 'rgba(245, 158, 11, 0.45)' : 'rgba(255, 255, 255, 0.08)'}`,
+            }}
+          >
+            {['studio_wide', '35mm_f14', '85mm_f12', '200mm_f28'].map((id) => {
+              const spec = cameraLenses.find((l) => l.id === id);
+              if (!spec) return null;
+              const isSelected = lensState.lensId === spec.id;
+              return (
+                <button
+                  key={spec.id}
+                  onClick={() => onSelectLens && onSelectLens(spec)}
+                  title={`${spec.name} • Auto-Dolly + Optical DoF`}
+                  style={{
+                    padding: '4px 7px',
+                    background: isSelected ? 'rgba(245, 158, 11, 0.22)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '3px',
+                    color: isSelected ? '#fde68a' : 'var(--text-muted)',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    fontFamily: 'var(--font-mono)',
+                    cursor: 'pointer',
+                    transition: 'all 0.12s ease',
+                  }}
+                >
+                  {spec.id === 'studio_wide' ? 'STD' : spec.shortLabel}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => onOpenOptics && onOpenOptics()}
+              title="Open Full Canon L-Series Lens Kit & Optical Bokeh Controls"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 7px',
+                background: lensState.dofEnabled ? 'rgba(245, 158, 11, 0.28)' : 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: '3px',
+                color: lensState.dofEnabled ? '#fbbf24' : '#e2e8f0',
+                fontSize: '10px',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              <Aperture size={11} />
+              <span>{lensState.dofEnabled ? `f/${lensState.fStop}` : 'LENSES'}</span>
+            </button>
+          </div>
+        )}
 
         {/* Environment Pill */}
         <div

@@ -1,8 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SceneManager } from './engine/SceneManager';
+import { STUDIO_LOOK_PRESETS } from './engine/ProceduralStages';
 import { MusicEngine } from './audio/MusicEngine';
 import { VideoExporter, ASPECT_RATIOS } from './recorder/VideoExporter';
-import { CARS_CATALOG, PLANES_CATALOG, PARTS_CATALOG, SCENES_CATALOG, MUSIC_CATALOG } from './data/catalog';
+import {
+  CARS_CATALOG,
+  PLANES_CATALOG,
+  PARTS_CATALOG,
+  SCENES_CATALOG,
+  MUSIC_CATALOG,
+  CAMERA_LENSES,
+} from './data/catalog';
 import { TopBar } from './components/TopBar';
 import { ModelBrowserDrawer } from './components/ModelBrowserDrawer';
 import { StudioControlsDrawer } from './components/StudioControlsDrawer';
@@ -26,7 +34,29 @@ export default function App() {
   // Drawers & Overlays
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
+  const [studioControlTab, setStudioControlTab] = useState('lighting');
   const [musicOpen, setMusicOpen] = useState(true);
+
+  // Pro Cyclorama Lighting Studio Interactive Rig State
+  const [proStudioState, setProStudioState] = useState({
+    presetId: 'clean_commercial',
+    ...STUDIO_LOOK_PRESETS.clean_commercial,
+    turntableEnabled: true,
+    turntableSpeed: 0.25,
+  });
+
+  // Physical Camera Lenses & Linear-HDR Optical Bokeh State
+  const [lensState, setLensState] = useState({
+    lensId: 'studio_wide',
+    focalLengthMm: null,
+    fStop: 2.8,
+    dofEnabled: false,
+    focusMode: 'auto',
+    clickFocusArmed: false,
+    manualFocusDistance: 5.5,
+    bokehBoost: 1.55,
+    currentFocusDistance: 5.5,
+  });
 
   // Aspect Ratio & Safe Frame
   const [aspectRatio, setAspectRatio] = useState('16:9');
@@ -144,11 +174,17 @@ export default function App() {
       onSceneLightingSync: (synced) => {
         setLightingState((prev) => ({ ...prev, ...synced }));
       },
+      onDofChange: (nextDof) => {
+        setLensState((prev) => ({ ...prev, ...nextDof }));
+      },
     });
     sm.musicEngine = music;
     sm.videoExporter = exporter;
     sm.beatCutEnabled = beatSyncEnabled;
     sceneManagerRef.current = sm;
+    if (import.meta.env.DEV && typeof window !== 'undefined') {
+      window.__sceneManager = sm;
+    }
 
     music.onStateChange = (state) => {
       setIsPlayingAudio(state.isPlaying);
@@ -310,6 +346,60 @@ export default function App() {
     if (sceneManagerRef.current) {
       sceneManagerRef.current.applySceneFilmPreset(presetId);
     }
+  };
+
+  // Pro Cyclorama Studio & Physical Lens / DoF Controls
+  const handleChangeProStudioState = (patch) => {
+    if (sceneManagerRef.current) {
+      const next = sceneManagerRef.current.setProStudioState(patch);
+      setProStudioState(next);
+    } else {
+      setProStudioState((prev) => ({ ...prev, ...patch }));
+    }
+  };
+
+  const handleApplyProStudioPreset = (presetId) => {
+    if (sceneManagerRef.current) {
+      const next = sceneManagerRef.current.applyProStudioPreset(presetId);
+      setProStudioState(next);
+    }
+  };
+
+  const handleSelectLens = (lensSpec) => {
+    if (!lensSpec) return;
+    const patch = {
+      lensId: lensSpec.id,
+      focalLengthMm: lensSpec.focalLengthMm,
+      fStop: lensSpec.defaultFStop,
+      dofEnabled: lensSpec.autoEnableDof ? true : false,
+    };
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setLensAndDof(patch, { autoDolly: true });
+    } else {
+      setLensState((prev) => ({ ...prev, ...patch }));
+    }
+  };
+
+  const handleChangeLensState = (patch) => {
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.setLensAndDof(patch, {
+        autoDolly: Object.prototype.hasOwnProperty.call(patch, 'focalLengthMm'),
+      });
+    } else {
+      setLensState((prev) => ({ ...prev, ...patch }));
+    }
+  };
+
+  const handleJumpToScene = (sceneId) => {
+    const target = SCENES_CATALOG.find((s) => s.id === sceneId);
+    if (target) {
+      handleSelectScene(target);
+    }
+  };
+
+  const handleOpenOpticsDrawer = () => {
+    setStudioControlTab('lenses');
+    setRightOpen(true);
   };
 
   const handleChangeDynamicsState = (partial) => {
@@ -525,8 +615,72 @@ export default function App() {
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       {/* 3D WebGL Canvas Viewport */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
-        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+        <canvas
+          ref={canvasRef}
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'block',
+            cursor: lensState.clickFocusArmed ? 'crosshair' : 'default',
+          }}
+        />
       </div>
+
+      {/* Click-to-Focus Armed HUD Pill */}
+      {!isRecording && lensState.clickFocusArmed && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '68px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 34,
+            background: 'rgba(15, 23, 42, 0.92)',
+            border: '1px solid #f59e0b',
+            borderRadius: '999px',
+            padding: '5px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
+          }}
+        >
+          <span
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: '#f59e0b',
+              boxShadow: '0 0 8px #f59e0b',
+            }}
+          />
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              fontFamily: 'var(--font-mono)',
+              color: '#fef3c7',
+            }}
+          >
+            CLICK-TO-FOCUS ACTIVE ({lensState.currentFocusDistance?.toFixed(2) || '5.50'}m) • CLICK CAR OR BACKGROUND
+          </span>
+          <button
+            onClick={() => handleChangeLensState({ clickFocusArmed: false, focusMode: 'auto' })}
+            style={{
+              background: 'rgba(245, 158, 11, 0.2)',
+              border: '1px solid rgba(245, 158, 11, 0.45)',
+              color: '#fde68a',
+              borderRadius: '999px',
+              padding: '2px 8px',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            LOCK AF
+          </button>
+        </div>
+      )}
 
       {/* Social Media Aspect Ratio Safe-Frame Overlay */}
       {safeFrameVisible && (
@@ -664,6 +818,10 @@ export default function App() {
         transformMode={transformMode}
         onChangeTransformMode={handleChangeTransformMode}
         onResetVehiclePose={handleResetVehiclePose}
+        lensState={lensState}
+        cameraLenses={CAMERA_LENSES}
+        onSelectLens={handleSelectLens}
+        onOpenOptics={handleOpenOpticsDrawer}
       />
 
       {/* Left Drawer: Model & Scene Browser */}
@@ -678,11 +836,21 @@ export default function App() {
         onSelectScene={handleSelectScene}
       />
 
-      {/* Right Drawer: Studio Controls (Weather, Lighting, Camera Director) */}
+      {/* Right Drawer: Studio Controls (Weather, Lighting, Lenses/DoF, Camera Director) */}
       <StudioControlsDrawer
         isOpen={rightOpen}
         onClose={() => setRightOpen(false)}
+        activeTab={studioControlTab}
+        onChangeActiveTab={setStudioControlTab}
         mode={mode}
+        // Pro Cyclorama Studio & Lenses/DoF
+        proStudioState={proStudioState}
+        onChangeProStudioState={handleChangeProStudioState}
+        onApplyProStudioPreset={handleApplyProStudioPreset}
+        lensState={lensState}
+        onSelectLens={handleSelectLens}
+        onChangeLensState={handleChangeLensState}
+        onJumpToScene={handleJumpToScene}
         // Weather
         weatherId={weatherId}
         onSelectWeather={handleSelectWeather}

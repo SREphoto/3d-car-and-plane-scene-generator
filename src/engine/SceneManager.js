@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { WeatherSystem } from './WeatherSystem.js';
 import { LightingRig } from './LightingRig.js';
 import { VehicleDynamics } from './VehicleDynamics.js';
@@ -9,6 +10,12 @@ import { CameraDirector } from './CameraDirector.js';
 import { CarMaterialEnhancer } from './CarMaterialEnhancer.js';
 import { PostProcessingPipeline } from './PostProcessingPipeline.js';
 import { VehicleController } from './VehicleController.js';
+import {
+  STUDIO_LOOK_PRESETS,
+  buildProLightingStudioStage,
+  buildWarehouseCourtyardStage,
+  buildCityBokehStreetStage,
+} from './ProceduralStages.js';
 
 const NIGHT_PHOTOGRAMMETRY_SCENES = new Set(['la_night_city']);
 const DAY_PHOTOGRAMMETRY_SCENES = new Set([
@@ -19,6 +26,18 @@ const DAY_PHOTOGRAMMETRY_SCENES = new Set([
   'eglise_saint_polycarpe',
   'kent_lumber_yard',
 ]);
+const LIVE_PROBE_PROCEDURAL_SCENES = new Set([
+  'pro_lighting_studio',
+  'warehouse_courtyard_day',
+  'city_bokeh_street_day',
+  'wet_night_bokeh_street',
+]);
+const CIRCUIT_TRACK_SCENES = new Set(['monaco_circuit', 'marina_bay_circuit']);
+
+const CIRCUIT_GLASS_RE = /glass|window|visor|water|flare|glow|smoke|shadow|skid|rubber|groove|light_beam|beam|halo_vis/i;
+const CIRCUIT_CUTOUT_RE = /tree|pino|forest|wood|bush|shrub|foliage|leaf|leaves|plant|palm|hedge|fence|catchfence|wire|mesh|net|grid|crowd|people|spectator|flag|banner|decal|logo|sign|lamp/i;
+const CIRCUIT_SOLID_RE = /grass|terrain|ground|land|hill|mount|sand|desert|gravel|verge|bank|soil|rock|cliff|field|asph|tar|road|tracksurface|kerb|curb|wall|conc|bldg|build|garag|roof|stand|tribun|barrier|armco|tyre|tire/i;
+const CIRCUIT_TERRAIN_DOUBLE_SIDE_RE = /grass|terrain|ground|land|hill|mount|sand|desert|gravel|verge|bank|soil|rock|cliff|field/i;
 
 export class SceneManager {
   constructor(canvas, callbacks = {}) {
@@ -49,11 +68,12 @@ export class SceneManager {
     this.controls.minDistance = 1.1;
     this.controls.maxDistance = 420;
 
-    // GLTF + Draco loader
+    // GLTF + Draco + Meshopt loader
     this.gltfLoader = new GLTFLoader();
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
     this.gltfLoader.setDRACOLoader(dracoLoader);
+    this.gltfLoader.setMeshoptDecoder(MeshoptDecoder);
 
     this.subjectHolder = new THREE.Group();
     this.subjectHolder.name = 'ActiveSubjectHolder';
@@ -103,11 +123,53 @@ export class SceneManager {
       }
     };
 
-    this.activeSceneId = 'interior_7';
+    this.activeSceneId = 'pro_lighting_studio';
     this.activeSceneItem = null;
     this.activeMode = 'cars';
     this.subjectCache = new Map();
     this.locationCache = new Map();
+    this.proceduralStageCache = new Map();
+    this.proStudioInstance = null;
+    this.proStudioState = {
+      presetId: 'clean_commercial',
+      ...STUDIO_LOOK_PRESETS.clean_commercial,
+      turntableEnabled: true,
+      turntableSpeed: 0.25,
+    };
+    this.activeSubjectBounds = { w: 2.0, h: 1.35, d: 4.75 };
+    this.lensState = {
+      lensId: 'studio_wide',
+      focalLengthMm: null,
+      fStop: 2.8,
+      dofEnabled: false,
+      focusMode: 'auto', // 'auto' | 'manual'
+      clickFocusArmed: false,
+      manualFocusDistance: 5.5,
+      bokehBoost: 1.55,
+      currentFocusDistance: 5.5,
+    };
+    this._focusRaycaster = new THREE.Raycaster();
+    this._focusNdc = new THREE.Vector2();
+    this._focusCenterVec = new THREE.Vector3();
+    this._focusDownPt = { x: 0, y: 0, valid: false };
+
+    this._onFocusPointerDown = (e) => {
+      if (e.button !== 0 || e.shiftKey) return;
+      if (!this.lensState.clickFocusArmed && !e.altKey) return;
+      this._focusDownPt = { x: e.clientX, y: e.clientY, valid: true };
+    };
+    this._onFocusPointerUp = (e) => {
+      if (!this._focusDownPt.valid) return;
+      const dx = e.clientX - this._focusDownPt.x;
+      const dy = e.clientY - this._focusDownPt.y;
+      this._focusDownPt.valid = false;
+      if (Math.hypot(dx, dy) <= 6 && (this.lensState.clickFocusArmed || e.altKey)) {
+        this.pickFocusAtClientPoint(e.clientX, e.clientY);
+      }
+    };
+    this.canvas.addEventListener('pointerdown', this._onFocusPointerDown);
+    this.canvas.addEventListener('pointerup', this._onFocusPointerUp);
+
     this.loadToken = 0;
     this.sceneLoadToken = 0;
     this.windTunnelFan = null;
@@ -135,7 +197,10 @@ export class SceneManager {
 
   refreshSceneReflectionProbe(pos = this.subjectHolder.position) {
     if (!this.lightingRig) return;
-    if (this.activeSceneItem && this.activeSceneItem.type === 'glb') {
+    const shouldCapture =
+      (this.activeSceneItem && this.activeSceneItem.type === 'glb') ||
+      LIVE_PROBE_PROCEDURAL_SCENES.has(this.activeSceneId);
+    if (shouldCapture) {
       this.lightingRig.captureSceneProbe(pos, [
         this.subjectHolder,
         this.vehicleController?.helper,
@@ -323,6 +388,7 @@ export class SceneManager {
 
       const modeChanged = this.currentMode !== mode;
       this.currentMode = mode;
+      this.activeSubjectBounds = bounds;
       this.vehicleDynamics.bindSubject(rootGroup, mode, bounds, this.subjectHolder);
       this.cameraDirector.setBounds(bounds, mode);
       if (modeChanged) {
@@ -562,23 +628,173 @@ export class SceneManager {
               rawLoc.position.set(...sceneItem.sceneOffset);
             }
             locGroup.add(rawLoc);
+          } else if (CIRCUIT_TRACK_SCENES.has(sceneItem.id)) {
+            // FIA Street Circuit Pipeline (Monaco & Singapore Marina Bay):
+            // Repairs Assetto Corsa specular-in-alpha BLEND flags so roads, kerbs, and buildings
+            // render crisp & opaque while palm trees, catchfences, and spectator crowds keep clean alpha cutouts.
+            let alphaProbeCtx = null;
+            const alphaDecisionCache = new WeakMap();
+            const classifyMatAlpha = (mat) => {
+              if (!mat) return 'opaque';
+              if (alphaDecisionCache.has(mat)) return alphaDecisionCache.get(mat);
+              let decision = 'unknown';
+              const img = mat.map?.image;
+              if (img && typeof document !== 'undefined') {
+                try {
+                  if (!alphaProbeCtx) {
+                    const cv = document.createElement('canvas');
+                    cv.width = 32;
+                    cv.height = 32;
+                    alphaProbeCtx = cv.getContext('2d', { willReadFrequently: true });
+                  }
+                  const w = img.width || img.videoWidth || 0;
+                  if (alphaProbeCtx && w > 0) {
+                    alphaProbeCtx.clearRect(0, 0, 32, 32);
+                    alphaProbeCtx.drawImage(img, 0, 0, 32, 32);
+                    const px = alphaProbeCtx.getImageData(0, 0, 32, 32).data;
+                    let minA = 255;
+                    let maxA = 0;
+                    let zeroCount = 0;
+                    for (let p = 3; p < px.length; p += 4) {
+                      const a = px[p];
+                      if (a < minA) minA = a;
+                      if (a > maxA) maxA = a;
+                      if (a < 24) zeroCount++;
+                    }
+                    const zeroRatio = zeroCount / 1024;
+                    decision =
+                      minA < 24 && maxA > 200 && zeroRatio >= 0.01 && zeroRatio <= 0.96
+                        ? 'cutout'
+                        : 'opaque';
+                  }
+                } catch {
+                  // ImageBitmap / GPU texture fallback
+                }
+              } else {
+                decision = 'opaque';
+              }
+              alphaDecisionCache.set(mat, decision);
+              return decision;
+            };
+
+            const seenMat = new Set();
+            let minLocalY = 0;
+            rawLoc.traverse((child) => {
+              if (!child.isMesh) return;
+              child.receiveShadow = true;
+              child.castShadow = false;
+              const parentName = child.parent?.name || '';
+              const mats = Array.isArray(child.material) ? child.material : [child.material];
+              mats.forEach((m) => {
+                if (!m || seenMat.has(m)) return;
+                seenMat.add(m);
+                if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+                m.envMapIntensity = sceneItem.id === 'marina_bay_circuit' ? 0.95 : 1.05;
+                const matLabel = `${m.name || ''} ${child.name || ''}`;
+                if (
+                  m.transparent &&
+                  (m.opacity === undefined || m.opacity >= 0.9) &&
+                  !CIRCUIT_GLASS_RE.test(matLabel)
+                ) {
+                  const fullLabel = `${matLabel} ${parentName}`;
+                  if (CIRCUIT_CUTOUT_RE.test(fullLabel)) {
+                    m.transparent = false;
+                    m.depthWrite = true;
+                    m.alphaTest = 0.35;
+                    m.side = THREE.DoubleSide;
+                  } else if (CIRCUIT_SOLID_RE.test(fullLabel)) {
+                    m.transparent = false;
+                    m.depthWrite = true;
+                    m.alphaTest = 0;
+                  } else {
+                    const kind = classifyMatAlpha(m);
+                    m.transparent = false;
+                    m.depthWrite = true;
+                    if (kind === 'cutout' || kind === 'unknown') {
+                      m.alphaTest = kind === 'cutout' ? 0.35 : 0.12;
+                      m.side = THREE.DoubleSide;
+                    } else {
+                      m.alphaTest = 0;
+                    }
+                  }
+                  m.needsUpdate = true;
+                }
+                if (CIRCUIT_TERRAIN_DOUBLE_SIDE_RE.test(matLabel)) {
+                  m.side = THREE.DoubleSide;
+                  m.needsUpdate = true;
+                }
+              });
+              if (child.geometry) {
+                child.geometry.computeBoundingBox?.();
+                const bb = child.geometry.boundingBox;
+                if (bb && Number.isFinite(bb.min.y)) {
+                  minLocalY = Math.min(minLocalY, bb.min.y);
+                }
+              }
+            });
+
+            locGroup = new THREE.Group();
+            const s = sceneItem.sceneScale || 1.0;
+            rawLoc.scale.setScalar(s);
+            if (sceneItem.sceneRotation) {
+              rawLoc.rotation.set(...sceneItem.sceneRotation);
+            }
+            if (sceneItem.sceneOffset) {
+              rawLoc.position.set(...sceneItem.sceneOffset);
+            }
+            locGroup.add(rawLoc);
+
+            // Subtle biome horizon underlay safely below lowest circuit mesh
+            const underlayGeo = new THREE.PlaneGeometry(6000, 6000);
+            underlayGeo.rotateX(-Math.PI / 2);
+            const underlayMat = new THREE.MeshStandardMaterial({
+              color: sceneItem.id === 'marina_bay_circuit' ? 0x0b101b : 0x222d2a,
+              roughness: 0.96,
+              metalness: 0.0,
+            });
+            const underlay = new THREE.Mesh(underlayGeo, underlayMat);
+            underlay.position.y = (sceneItem.sceneOffset?.[1] || 0) + minLocalY * s - 2.0;
+            locGroup.add(underlay);
           } else if (sceneItem.calibrated) {
-            // Pre-calibrated 1:1 metric scenes (F1 garages, repaired hangars/halls)
+            // Pre-calibrated 1:1 metric scenes (F1 garages, parking garage, collector showroom, hangars)
+            const isTonedGarage =
+              sceneItem.id === 'red_bull_f1_garage' || sceneItem.id === 'detailed_parking_garage';
+            const seenGarageMats = new Set();
             rawLoc.traverse((child) => {
               if (child.isMesh) {
                 child.receiveShadow = true;
                 child.castShadow = true;
-                if (child.material) {
-                  if (child.material.map) {
-                    child.material.map.colorSpace = THREE.SRGBColorSpace;
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach((m) => {
+                  if (!m || seenGarageMats.has(m)) return;
+                  seenGarageMats.add(m);
+                  if (m.map) {
+                    m.map.colorSpace = THREE.SRGBColorSpace;
                   }
-                  child.material.envMapIntensity = 1.15;
-                }
+                  if (isTonedGarage) {
+                    m.envMapIntensity = 0.55;
+                    // Prevent pure-white untextured plaster/ceiling panels from blowing out under ACES
+                    if (!m.map && m.color) {
+                      const lum = m.color.r * 0.2126 + m.color.g * 0.7152 + m.color.b * 0.0722;
+                      if (lum > 0.68) {
+                        m.color.multiplyScalar(0.66);
+                      }
+                    }
+                    if (m.emissiveIntensity !== undefined && m.emissiveIntensity > 1.8) {
+                      m.emissiveIntensity = 1.8;
+                    }
+                  } else {
+                    m.envMapIntensity = 1.12;
+                  }
+                });
               }
             });
             locGroup = new THREE.Group();
             const s = sceneItem.sceneScale || 1.0;
             rawLoc.scale.setScalar(s);
+            if (sceneItem.sceneRotation) {
+              rawLoc.rotation.set(...sceneItem.sceneRotation);
+            }
             if (sceneItem.sceneOffset) {
               rawLoc.position.set(...sceneItem.sceneOffset);
             }
@@ -656,9 +872,166 @@ export class SceneManager {
         }
       }
     } else {
+      // High-DPI Procedural Stages (Pro Cyclorama Studio, Day Brick Warehouse, Day/Wet-Night Bokeh Street)
+      if (sceneItem.id === 'pro_lighting_studio') {
+        if (!this.proStudioInstance) {
+          this.proStudioInstance = buildProLightingStudioStage(this.renderer, this.proStudioState);
+        } else {
+          this.proStudioInstance.applyStudioState(this.proStudioState);
+        }
+        this.proStudioInstance.turntableGroup.rotation.y = this.subjectHolder.rotation.y;
+        this.locationHolder.add(this.proStudioInstance.group);
+        this.proStudioInstance.group.updateMatrixWorld(true);
+      } else if (
+        sceneItem.id === 'warehouse_courtyard_day' ||
+        sceneItem.id === 'city_bokeh_street_day' ||
+        sceneItem.id === 'wet_night_bokeh_street'
+      ) {
+        let stageObj = this.proceduralStageCache.get(sceneItem.id);
+        if (!stageObj) {
+          if (sceneItem.id === 'warehouse_courtyard_day') {
+            stageObj = buildWarehouseCourtyardStage(this.renderer);
+          } else {
+            stageObj = buildCityBokehStreetStage(this.renderer, {
+              isNight: sceneItem.id === 'wet_night_bokeh_street',
+            });
+          }
+          this.proceduralStageCache.set(sceneItem.id, stageObj);
+        }
+        this.locationHolder.add(stageObj.group);
+        stageObj.group.updateMatrixWorld(true);
+      }
+
+      if (this.activeMode === 'cars' && this.vehicleController.snapToGround) {
+        this.vehicleController.snapSubjectToGround();
+      }
+      this.lightingRig.updateSubjectFocus(this.subjectHolder.position);
+      this.refreshSceneReflectionProbe(this.subjectHolder.position);
       this.cameraDirector.setSceneId(sceneItem.id);
       this.vehicleController._emitPose();
     }
+  }
+
+  // --- Pro Cyclorama Lighting Studio Controls ---
+  setProStudioState(patch = {}) {
+    this.proStudioState = {
+      ...this.proStudioState,
+      ...patch,
+    };
+    if (this.proStudioInstance) {
+      this.proStudioInstance.applyStudioState(this.proStudioState);
+      if (this.activeSceneId === 'pro_lighting_studio') {
+        this.refreshSceneReflectionProbe(this.subjectHolder.position);
+      }
+    }
+    return { ...this.proStudioState };
+  }
+
+  applyProStudioPreset(presetId) {
+    const preset = STUDIO_LOOK_PRESETS[presetId];
+    if (!preset) return { ...this.proStudioState };
+    return this.setProStudioState({
+      presetId,
+      ...preset,
+    });
+  }
+
+  getProStudioState() {
+    return { ...this.proStudioState };
+  }
+
+  // --- Physical Camera Lenses & Linear-HDR Optical Bokeh DoF ---
+  setLensAndDof(patch = {}, options = { autoDolly: true }) {
+    const prevFocal = this.lensState.focalLengthMm;
+    this.lensState = {
+      ...this.lensState,
+      ...patch,
+    };
+
+    if ('focalLengthMm' in patch && patch.focalLengthMm !== prevFocal) {
+      this.cameraDirector.setPhysicalLens(patch.focalLengthMm, {
+        autoDolly: options.autoDolly !== false,
+      });
+    }
+
+    const effFocal = this.lensState.focalLengthMm || 31;
+    const focusDist =
+      this.lensState.focusMode === 'manual'
+        ? this.lensState.manualFocusDistance
+        : this._computeAutoFocusDistance();
+    this.lensState.currentFocusDistance = Number(focusDist.toFixed(2));
+
+    this.pipeline.setDofConfig({
+      enabled: Boolean(this.lensState.dofEnabled),
+      focalLengthMm: effFocal,
+      fStop: this.lensState.fStop,
+      focusDistance: focusDist,
+      bokehBoost: this.lensState.bokehBoost,
+    });
+
+    if (this.callbacks.onDofChange) {
+      this.callbacks.onDofChange({ ...this.lensState });
+    }
+    return { ...this.lensState };
+  }
+
+  getLensAndDofState() {
+    return { ...this.lensState };
+  }
+
+  _computeAutoFocusDistance() {
+    const b = this.activeSubjectBounds || { w: 2.0, h: 1.35, d: 4.75 };
+    this._focusCenterVec.set(
+      this.subjectHolder.position.x,
+      this.subjectHolder.position.y + b.h * 0.42,
+      this.subjectHolder.position.z
+    );
+    const centerDist = this.camera.position.distanceTo(this._focusCenterVec);
+    // Focus slightly forward toward the camera-facing bodywork/headlight/badge so front 3/4 hero details stay tack-sharp
+    const frontBias = Math.min(Math.max(b.d * 0.16, 0.25), 1.35);
+    return Math.max(0.45, centerDist - frontBias);
+  }
+
+  pickFocusAtClientPoint(clientX, clientY) {
+    if (!this.canvas) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+    return this.pickFocusAtNormalizedPoint(ndcX, ndcY);
+  }
+
+  pickFocusAtNormalizedPoint(ndcX, ndcY) {
+    this._focusNdc.set(ndcX, ndcY);
+    this._focusRaycaster.setFromCamera(this._focusNdc, this.camera);
+    const candidates = [this.subjectHolder, this.locationHolder].filter(Boolean);
+    const hits = this._focusRaycaster.intersectObjects(candidates, true);
+    const hit = hits.find(
+      (h) =>
+        h.object &&
+        h.object.visible &&
+        h.distance >= 0.35 &&
+        h.distance <= 450 &&
+        h.object.name !== 'VehicleContactAOShadow' &&
+        h.object.name !== 'VehicleDirectionalShadowCatcher'
+    );
+    if (!hit) return null;
+
+    const pickedDist = Number(hit.distance.toFixed(2));
+    this.setLensAndDof(
+      {
+        dofEnabled: true,
+        focusMode: 'manual',
+        manualFocusDistance: pickedDist,
+        currentFocusDistance: pickedDist,
+      },
+      { autoDolly: false }
+    );
+    return {
+      distance: pickedDist,
+      point: hit.point.clone(),
+      objectName: hit.object.name || 'surface',
+    };
   }
 
   applySceneFilmPreset(presetId) {
@@ -744,9 +1117,21 @@ export class SceneManager {
       }
     }
 
-    // 2. Rotate Wind Tunnel Fan
+    // 2. Rotate Wind Tunnel Fan & Pro Cyclorama Motorized Turntable
     if (this.activeSceneId === 'wind_tunnel' && this.windTunnelFan) {
       this.windTunnelFan.rotateX(-dt * 22.0);
+    }
+    if (
+      this.activeSceneId === 'pro_lighting_studio' &&
+      this.proStudioState.turntableEnabled &&
+      this.proStudioState.turntableSpeed > 0 &&
+      this.vehicleController.mode !== 'drive'
+    ) {
+      this.subjectHolder.rotation.y =
+        (this.subjectHolder.rotation.y + dt * this.proStudioState.turntableSpeed) % (Math.PI * 2);
+      if (this.proStudioInstance?.turntableGroup) {
+        this.proStudioInstance.turntableGroup.rotation.y = this.subjectHolder.rotation.y;
+      }
     }
 
     // 3. Update Live WASD Vehicle Driving / Flying
@@ -790,7 +1175,14 @@ export class SceneManager {
       : 0;
     this.cameraDirector.update(dt, subjectBobY);
 
-    // 8. Render with AAA Post-Processing Pipeline (ACES Filmic -> Film Grade -> Vignette)
+    // 7b. Real-Time Subject-Tracking Auto-Focus for Optical Bokeh Lens
+    if (this.lensState.dofEnabled && this.lensState.focusMode === 'auto') {
+      const autoDist = this._computeAutoFocusDistance();
+      this.lensState.currentFocusDistance = Number(autoDist.toFixed(2));
+      this.pipeline.setDofConfig({ focusDistance: autoDist });
+    }
+
+    // 8. Render with AAA Post-Processing Pipeline (Linear-HDR Bokeh -> Bloom -> ACES -> Film Grade)
     this.pipeline.render(dt);
 
     // 9. Capture frame into Social Media Video Exporter if recording (gizmo guaranteed hidden!)
@@ -802,6 +1194,11 @@ export class SceneManager {
   dispose() {
     this.disposed = true;
     window.removeEventListener('resize', this._resizeHandler);
+    if (this.canvas) {
+      this.canvas.removeEventListener('pointerdown', this._onFocusPointerDown);
+      this.canvas.removeEventListener('pointerup', this._onFocusPointerUp);
+    }
+    this.pipeline.dispose();
     this.vehicleController.dispose();
     this.renderer.dispose();
   }

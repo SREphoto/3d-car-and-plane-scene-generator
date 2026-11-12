@@ -137,16 +137,16 @@ export function createLoftEnvironmentScene() {
 // 3. Underground & F1 Pit Garages (Crisp Motorsport LED Lightbanks + Epoxy Floor Bounce)
 export function createGarageEnvironmentScene(isF1Pit = false) {
   const envScene = new THREE.Scene();
-  envScene.background = new THREE.Color(isF1Pit ? '#0d1320' : '#0a0d14');
+  envScene.background = new THREE.Color(isF1Pit ? '#070a12' : '#080b12');
 
   const tubeMat = new THREE.MeshBasicMaterial({
-    color: isF1Pit ? new THREE.Color(8.5, 9.0, 9.8) : new THREE.Color(6.8, 7.2, 8.2),
+    color: isF1Pit ? new THREE.Color(3.4, 3.7, 4.2) : new THREE.Color(4.2, 4.6, 5.4),
     side: THREE.DoubleSide,
   });
 
   [-2.2, 0, 2.2].forEach((x, idx) => {
     if (!isF1Pit && idx === 1) return;
-    const tube = new THREE.Mesh(new THREE.PlaneGeometry(isF1Pit ? 0.85 : 0.5, 18), tubeMat);
+    const tube = new THREE.Mesh(new THREE.PlaneGeometry(isF1Pit ? 0.65 : 0.48, 18), tubeMat);
     tube.rotation.x = Math.PI / 2;
     tube.position.set(x, 4.8, 0);
     envScene.add(tube);
@@ -156,13 +156,13 @@ export function createGarageEnvironmentScene(isF1Pit = false) {
   if (isF1Pit) {
     const pitDoor = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 4.5),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(4.5, 5.0, 5.8), side: THREE.DoubleSide })
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(1.8, 2.0, 2.4), side: THREE.DoubleSide })
     );
     pitDoor.position.set(0, 2.4, -12);
     envScene.add(pitDoor);
   }
 
-  const wallCol = isF1Pit ? new THREE.Color(0.55, 0.6, 0.72) : new THREE.Color(0.35, 0.4, 0.5);
+  const wallCol = isF1Pit ? new THREE.Color(0.22, 0.25, 0.32) : new THREE.Color(0.24, 0.28, 0.36);
   [-8.5, 8.5].forEach((x, idx) => {
     const wall = new THREE.Mesh(
       new THREE.PlaneGeometry(24, 6),
@@ -175,7 +175,7 @@ export function createGarageEnvironmentScene(isF1Pit = false) {
 
   const floorBounce = new THREE.Mesh(
     new THREE.PlaneGeometry(24, 24),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color(0.24, 0.27, 0.33), side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(0.14, 0.16, 0.2), side: THREE.DoubleSide })
   );
   floorBounce.rotation.x = -Math.PI / 2;
   floorBounce.position.set(0, -0.1, 0);
@@ -364,6 +364,8 @@ export function getEnvironmentSceneForSceneId(sceneId) {
     case 'architectural_exhibition_hall':
       return createLoftEnvironmentScene();
     case 'car_garage':
+    case 'detailed_parking_garage':
+    case 'velvet_curtain_showroom':
     case 'catwalk':
       return createGarageEnvironmentScene(false);
     case 'red_bull_f1_garage':
@@ -375,19 +377,25 @@ export function getEnvironmentSceneForSceneId(sceneId) {
     case 'wind_tunnel':
       return createWindTunnelEnvironmentScene();
     case 'la_night_city':
+    case 'wet_night_bokeh_street':
+    case 'marina_bay_circuit':
     case 'night_runway':
     case 'cyberpunk_garage':
     case 'cyberpunk_tunnel':
       return createNightCityEnvironmentScene();
+    case 'warehouse_courtyard_day':
+    case 'monaco_circuit':
     case 'vatican_city':
     case 'desert_workshop_garage':
     case 'construction_site':
       return createDaylightOutdoorEnvironmentScene('warm');
+    case 'city_bokeh_street_day':
     case 'canadian_downtown':
     case 'eglise_saint_polycarpe':
     case 'kent_lumber_yard':
     case 'cloud_deck':
       return createDaylightOutdoorEnvironmentScene('clear');
+    case 'pro_lighting_studio':
     case 'dark_void':
     case 'wet_studio':
     default:

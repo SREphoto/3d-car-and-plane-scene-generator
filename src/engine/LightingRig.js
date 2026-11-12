@@ -34,24 +34,189 @@ export const SCENE_LIGHTING_PROFILES = {
     shadowCatcherOpacity: 0.52,
   },
   red_bull_f1_garage: {
-    bg: '#090d16',
-    fogColor: '#090d16',
-    fogDensity: 0.0018,
-    envIntensity: 1.25,
-    exposure: 1.04,
-    ambientSky: '#f1f5f9',
-    ambientGround: '#1e293b',
-    ambientIntensity: 0.85,
-    keyColor: '#f8fafc', // 5600K overhead F1 pit bay LED lightbank
-    keyIntensity: 2.75,
-    keyOffset: [2.5, 6.2, -3.5],
-    fillColor: '#93c5fd',
-    fillIntensity: 0.85,
-    fillOffset: [-6, 3.8, 5],
+    bg: '#060910',
+    fogColor: '#060910',
+    fogDensity: 0.0016,
+    envIntensity: 0.72,
+    exposure: 0.82,
+    ambientSky: '#cbd5e1',
+    ambientGround: '#0f172a',
+    ambientIntensity: 0.28,
+    keyColor: '#f8fafc', // 5600K overhead F1 pit bay LED lightbank (calibrated non-clipping)
+    keyIntensity: 1.35,
+    keyOffset: [2.5, 5.2, -3.5],
+    fillColor: '#60a5fa',
+    fillIntensity: 0.32,
+    fillOffset: [-6, 3.5, 5],
     rimColor: '#ef4444', // Subtle Red Bull pit accent kicker
-    rimIntensity: 1.25,
-    rimOffset: [0, 4.5, 8],
-    shadowCatcherOpacity: 0.38,
+    rimIntensity: 0.85,
+    rimOffset: [0, 4.2, 8],
+    shadowCatcherOpacity: 0.34,
+  },
+  pro_lighting_studio: {
+    bg: '#05060a',
+    fogColor: '#05060a',
+    fogDensity: 0.0008,
+    envIntensity: 1.18,
+    exposure: 0.98,
+    ambientSky: '#e2e8f0',
+    ambientGround: '#0f172a',
+    ambientIntensity: 0.06,
+    keyColor: '#ffffff',
+    keyIntensity: 0.08,
+    keyOffset: [0, 7.5, -1],
+    fillColor: '#93c5fd',
+    fillIntensity: 0.05,
+    fillOffset: [-8, 4, 5],
+    rimColor: '#f8fafc',
+    rimIntensity: 0.05,
+    rimOffset: [0, 5, 10],
+    shadowCatcherOpacity: 0.08,
+  },
+  warehouse_courtyard_day: {
+    bg: '#84b4df',
+    fogColor: '#d8cbb7',
+    fogDensity: 0.0018,
+    skyDome: ['#3570ab', '#dfd2be', '#5e5447'],
+    envIntensity: 1.16,
+    exposure: 0.98,
+    ambientSky: '#fef3c7',
+    ambientGround: '#57534e',
+    ambientIntensity: 0.78,
+    keyColor: '#fff1d6', // Golden late-afternoon sun raking across brick facade
+    keyIntensity: 2.95,
+    keyOffset: [14, 15, -11],
+    fillColor: '#93c5fd',
+    fillIntensity: 0.62,
+    fillOffset: [-14, 10, 12],
+    rimColor: '#fde68a',
+    rimIntensity: 0.95,
+    rimOffset: [-10, 9, 13],
+    shadowCatcherOpacity: 0.08,
+  },
+  city_bokeh_street_day: {
+    bg: '#85b6e0',
+    fogColor: '#c3d5e6',
+    fogDensity: 0.0022,
+    skyDome: ['#3470ac', '#c8daea', '#4a5058'],
+    envIntensity: 1.15,
+    exposure: 0.98,
+    ambientSky: '#e0f2fe',
+    ambientGround: '#475569',
+    ambientIntensity: 0.82,
+    keyColor: '#fff8ea',
+    keyIntensity: 2.85,
+    keyOffset: [13, 18, -10],
+    fillColor: '#93c5fd',
+    fillIntensity: 0.65,
+    fillOffset: [-14, 11, 12],
+    rimColor: '#fffbeb',
+    rimIntensity: 0.85,
+    rimOffset: [-8, 10, 14],
+    shadowCatcherOpacity: 0.08,
+  },
+  wet_night_bokeh_street: {
+    bg: '#04060c',
+    fogColor: '#060a14',
+    fogDensity: 0.0042,
+    skyDome: ['#03060e', '#10182b', '#05070d'],
+    envIntensity: 1.28,
+    exposure: 1.04,
+    ambientSky: '#60a5fa',
+    ambientGround: '#1e1b2e',
+    ambientIntensity: 0.34,
+    keyColor: '#ffd8a8', // Warm urban streetlamp key
+    keyIntensity: 1.45,
+    keyOffset: [7, 10, -6],
+    fillColor: '#38bdf8', // Cyan storefront neon fill
+    fillIntensity: 0.55,
+    fillOffset: [-9, 5, 7],
+    rimColor: '#ff3d8b', // Magenta neon rim kicker
+    rimIntensity: 1.35,
+    rimOffset: [5, 5, 11],
+    shadowCatcherOpacity: 0.12,
+  },
+  detailed_parking_garage: {
+    bg: '#070a11',
+    fogColor: '#070a11',
+    fogDensity: 0.0024,
+    envIntensity: 0.82,
+    exposure: 0.88,
+    ambientSky: '#cbd5e1',
+    ambientGround: '#0f172a',
+    ambientIntensity: 0.36,
+    keyColor: '#f1f5f9',
+    keyIntensity: 1.68,
+    keyOffset: [1.5, 4.2, -2.5],
+    fillColor: '#64748b',
+    fillIntensity: 0.45,
+    fillOffset: [-5, 2.8, 4],
+    rimColor: '#93c5fd',
+    rimIntensity: 0.95,
+    rimOffset: [0, 3.6, 7],
+    shadowCatcherOpacity: 0.35,
+  },
+  velvet_curtain_showroom: {
+    bg: '#0b0507',
+    fogColor: '#0b0507',
+    fogDensity: 0.0022,
+    envIntensity: 1.08,
+    exposure: 0.96,
+    ambientSky: '#ffe4e6',
+    ambientGround: '#1f1016',
+    ambientIntensity: 0.42,
+    keyColor: '#fff5e6', // Warm gallery halogen spotlight
+    keyIntensity: 2.35,
+    keyOffset: [2.4, 2.75, -2.4],
+    fillColor: '#fda4af', // Crimson velvet curtain bounce
+    fillIntensity: 0.48,
+    fillOffset: [-4.5, 2.0, 3.5],
+    rimColor: '#fde68a',
+    rimIntensity: 1.15,
+    rimOffset: [0, 2.5, 5.5],
+    shadowCatcherOpacity: 0.24,
+  },
+  monaco_circuit: {
+    bg: '#82b6e2',
+    fogColor: '#cfe0ee',
+    fogDensity: 0.00065,
+    skyDome: ['#2f6ead', '#d9e6f2', '#555b61'],
+    envIntensity: 1.16,
+    exposure: 0.98,
+    ambientSky: '#e0f2fe',
+    ambientGround: '#57534e',
+    ambientIntensity: 0.88,
+    keyColor: '#fff6e0', // Mediterranean Monte Carlo sun
+    keyIntensity: 2.9,
+    keyOffset: [18, 24, -14],
+    fillColor: '#93c5fd',
+    fillIntensity: 0.68,
+    fillOffset: [-16, 12, 14],
+    rimColor: '#fef3c7',
+    rimIntensity: 0.9,
+    rimOffset: [-10, 11, 15],
+    shadowCatcherOpacity: 0.34,
+  },
+  marina_bay_circuit: {
+    bg: '#050811',
+    fogColor: '#080e1c',
+    fogDensity: 0.0014,
+    skyDome: ['#040710', '#121d33', '#06080f'],
+    envIntensity: 1.18,
+    exposure: 1.02,
+    ambientSky: '#93c5fd',
+    ambientGround: '#1e293b',
+    ambientIntensity: 0.52,
+    keyColor: '#f8fafc', // Singapore FIA overhead track floodlights
+    keyIntensity: 2.35,
+    keyOffset: [3, 18, -8],
+    fillColor: '#38bdf8',
+    fillIntensity: 0.68,
+    fillOffset: [-12, 10, 10],
+    rimColor: '#fbbf24',
+    rimIntensity: 1.35,
+    rimOffset: [-6, 9, 14],
+    shadowCatcherOpacity: 0.34,
   },
   f1_pit_garage: {
     bg: '#0b101b',
@@ -744,6 +909,7 @@ export class LightingRig {
     this.cloudDeckGroup.visible = sceneId === 'cloud_deck';
     this.runwayGroup.visible = sceneId === 'night_runway';
     this.windTunnelGroup.visible = false;
+    this.keyLight.castShadow = sceneId !== 'pro_lighting_studio';
 
     if (sceneId !== 'outdoor_world') {
       const envTex = this.getEnvironmentForScene(sceneId);
@@ -960,14 +1126,14 @@ export class LightingRig {
         break;
       case 'f1_paddock_day':
         this.keyLight.color.set('#f8fafc');
-        this.keyLight.intensity = 2.85;
+        this.keyLight.intensity = 1.65;
         this.activeKeyOffset.set(0.0, 4.4, -2.5);
         this.fillLight.color.set('#93c5fd');
-        this.fillLight.intensity = 1.05;
+        this.fillLight.intensity = 0.45;
         this.rimLight.color.set('#ef4444');
-        this.activeRimBase = 1.75;
-        this.ambientLight.intensity = 0.85;
-        this.renderer.toneMappingExposure = 1.05;
+        this.activeRimBase = 1.05;
+        this.ambientLight.intensity = 0.35;
+        this.renderer.toneMappingExposure = 0.86;
         break;
       case 'f1_night_qualifying':
         this.keyLight.color.set('#e2e8f0');

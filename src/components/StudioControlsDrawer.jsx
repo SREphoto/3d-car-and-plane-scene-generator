@@ -18,6 +18,8 @@ import {
   RotateCw,
   Eye,
   Camera,
+  Aperture,
+  Crosshair,
   X,
   RefreshCw,
   Palette,
@@ -32,9 +34,11 @@ import {
   LIGHTING_PRESETS,
   SCENE_FILM_PRESETS,
   CAMERA_SHOTS,
+  CAMERA_LENSES,
   CAR_PAINT_COLORS,
   CAR_PAINT_FINISHES,
 } from '../data/catalog';
+import { STUDIO_LOOK_PRESETS, STUDIO_FLOOR_FINISHES } from '../engine/ProceduralStages';
 
 const WEATHER_ICONS = {
   sunny: Sun,
@@ -48,7 +52,17 @@ const WEATHER_ICONS = {
 export function StudioControlsDrawer({
   isOpen,
   onClose,
+  activeTab: controlledTab,
+  onChangeActiveTab,
   mode,
+  // Pro Cyclorama Studio & Lenses/DoF
+  proStudioState = {},
+  onChangeProStudioState,
+  onApplyProStudioPreset,
+  lensState = {},
+  onSelectLens,
+  onChangeLensState,
+  onJumpToScene,
   // Weather & Time
   weatherId,
   onSelectWeather,
@@ -109,7 +123,12 @@ export function StudioControlsDrawer({
   onChangeSequenceClips,
   beatSyncEnabled,
 }) {
-  const [activeTab, setActiveTab] = useState('lighting'); // 'weather' | 'lighting' | 'paint' | 'camera'
+  const [localTab, setLocalTab] = useState('lighting');
+  const activeTab = controlledTab || localTab;
+  const setActiveTab = (t) => {
+    setLocalTab(t);
+    if (onChangeActiveTab) onChangeActiveTab(t);
+  };
 
   if (!isOpen) return null;
 
@@ -241,6 +260,26 @@ export function StudioControlsDrawer({
           </button>
 
           <button
+            onClick={() => setActiveTab('lenses')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 9px',
+              background: activeTab === 'lenses' ? 'rgba(245, 158, 11, 0.22)' : 'transparent',
+              border: `1px solid ${activeTab === 'lenses' ? 'var(--accent-amber)' : 'transparent'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: activeTab === 'lenses' ? '#fbbf24' : 'var(--text-secondary)',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <Aperture size={13} />
+            <span>LENSES / DOF</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('paint')}
             style={{
               display: 'flex',
@@ -347,9 +386,544 @@ export function StudioControlsDrawer({
           gap: '20px',
         }}
       >
+        {/* ================= TAB: LENSES & LINEAR-HDR OPTICAL BOKEH ================= */}
+        {activeTab === 'lenses' && (
+          <>
+            <div
+              style={{
+                background: 'linear-gradient(180deg, rgba(245, 158, 11, 0.12), rgba(15, 23, 42, 0.55))',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                  <Aperture size={15} color="#fbbf24" />
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff', letterSpacing: '0.5px' }}>
+                    CANON L-SERIES PRIME & TELEPHOTO KIT
+                  </span>
+                </div>
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 800,
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    background: 'rgba(245, 158, 11, 0.22)',
+                    color: '#fde68a',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  AUTO-DOLLY
+                </span>
+              </div>
+
+              <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                Switching focal length automatically dollies the camera back on a 36×24mm full-frame sensor so your car stays framed while compressing the background.
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '7px' }}>
+                {CAMERA_LENSES.map((lens) => {
+                  const selected = lensState.lensId === lens.id;
+                  return (
+                    <button
+                      key={lens.id}
+                      onClick={() => onSelectLens && onSelectLens(lens)}
+                      style={{
+                        padding: '9px 10px',
+                        background: selected ? 'rgba(245, 158, 11, 0.24)' : 'rgba(15, 23, 42, 0.82)',
+                        border: `1px solid ${selected ? '#fbbf24' : 'rgba(255, 255, 255, 0.1)'}`,
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '3px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: selected ? '#ffffff' : '#e2e8f0' }}>
+                          {lens.shortLabel}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '8px',
+                            fontWeight: 800,
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            background: selected ? '#f59e0b' : 'rgba(255,255,255,0.08)',
+                            color: selected ? '#090d16' : '#94a3b8',
+                            fontFamily: 'var(--font-mono)',
+                          }}
+                        >
+                          {lens.badge}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>{lens.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Optical Depth of Field & Focus Controls */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '13px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff' }}>
+                    OPTICAL DEPTH OF FIELD (HDR BOKEH)
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>
+                    {lensState.focalLengthMm ? `${lensState.focalLengthMm}mm` : '31mm'} • f/{lensState.fStop ?? 2.8} • Focus {(lensState.currentFocusDistance ?? 5.5).toFixed(2)}m
+                  </div>
+                </div>
+                <button
+                  onClick={() =>
+                    onChangeLensState &&
+                    onChangeLensState({ dofEnabled: !lensState.dofEnabled })
+                  }
+                  style={{
+                    padding: '6px 12px',
+                    background: lensState.dofEnabled
+                      ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                      : 'rgba(255, 255, 255, 0.08)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {lensState.dofEnabled ? 'DOF ACTIVE' : 'ENABLE DOF'}
+                </button>
+              </div>
+
+              {/* Focus Mode Segmented Control */}
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 600 }}>
+                  Focus Tracking Mode
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                  {[
+                    {
+                      id: 'auto',
+                      label: 'Auto Car AF',
+                      active: lensState.focusMode === 'auto' && !lensState.clickFocusArmed,
+                      onClick: () =>
+                        onChangeLensState &&
+                        onChangeLensState({ dofEnabled: true, focusMode: 'auto', clickFocusArmed: false }),
+                    },
+                    {
+                      id: 'click',
+                      label: 'Click-to-Focus',
+                      active: Boolean(lensState.clickFocusArmed),
+                      onClick: () =>
+                        onChangeLensState &&
+                        onChangeLensState({
+                          dofEnabled: true,
+                          clickFocusArmed: !lensState.clickFocusArmed,
+                        }),
+                    },
+                    {
+                      id: 'manual',
+                      label: 'Manual Pull',
+                      active: lensState.focusMode === 'manual' && !lensState.clickFocusArmed,
+                      onClick: () =>
+                        onChangeLensState &&
+                        onChangeLensState({
+                          dofEnabled: true,
+                          focusMode: 'manual',
+                          clickFocusArmed: false,
+                          manualFocusDistance: lensState.currentFocusDistance || 5.5,
+                        }),
+                    },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={m.onClick}
+                      style={{
+                        padding: '7px 8px',
+                        background: m.active ? 'rgba(245, 158, 11, 0.22)' : 'rgba(255, 255, 255, 0.04)',
+                        border: `1px solid ${m.active ? '#fbbf24' : 'var(--border-subtle)'}`,
+                        borderRadius: '5px',
+                        color: m.active ? '#fde68a' : 'var(--text-secondary)',
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '5px' }}>
+                  Tip: Hold <strong style={{ color: '#e2e8f0' }}>Alt + Click</strong> anywhere on the 3D viewport at any time to rack focus onto a headlight, badge, or distant streetlamp.
+                </div>
+              </div>
+
+              {/* Aperture Slider + Quick Stops */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  <span>Aperture Iris (Shallow ↔ Deep)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#fbbf24', fontWeight: 700 }}>
+                    f/{Number(lensState.fStop ?? 2.8).toFixed(1)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1.2"
+                  max="16"
+                  step="0.1"
+                  value={lensState.fStop ?? 2.8}
+                  onChange={(e) =>
+                    onChangeLensState &&
+                    onChangeLensState({ dofEnabled: true, fStop: parseFloat(e.target.value) })
+                  }
+                />
+                <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
+                  {[1.2, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 16.0].map((stop) => (
+                    <button
+                      key={stop}
+                      onClick={() =>
+                        onChangeLensState && onChangeLensState({ dofEnabled: true, fStop: stop })
+                      }
+                      style={{
+                        padding: '3px 7px',
+                        background:
+                          Math.abs((lensState.fStop ?? 2.8) - stop) < 0.08
+                            ? 'rgba(245, 158, 11, 0.25)'
+                            : 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '4px',
+                        color: '#e2e8f0',
+                        fontSize: '10px',
+                        fontFamily: 'var(--font-mono)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      f/{stop}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Manual Focus Distance Slider */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  <span>Focus Distance {lensState.focusMode === 'auto' ? '(Auto-Tracking Car)' : '(Manual Locked)'}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {(lensState.focusMode === 'manual'
+                      ? lensState.manualFocusDistance ?? 5.5
+                      : lensState.currentFocusDistance ?? 5.5
+                    ).toFixed(2)}m
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1.0"
+                  max="65.0"
+                  step="0.1"
+                  value={
+                    lensState.focusMode === 'manual'
+                      ? lensState.manualFocusDistance ?? 5.5
+                      : lensState.currentFocusDistance ?? 5.5
+                  }
+                  onChange={(e) => {
+                    const d = parseFloat(e.target.value);
+                    if (onChangeLensState) {
+                      onChangeLensState({
+                        dofEnabled: true,
+                        focusMode: 'manual',
+                        manualFocusDistance: d,
+                        currentFocusDistance: d,
+                      });
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Night HDR Bokeh Specular Highlight Boost */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  <span>Night HDR Bokeh Disc Intensity</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>
+                    {Number(lensState.bokehBoost ?? 1.55).toFixed(2)}x
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.0"
+                  max="3.5"
+                  step="0.05"
+                  value={lensState.bokehBoost ?? 1.55}
+                  onChange={(e) =>
+                    onChangeLensState &&
+                    onChangeLensState({ bokehBoost: parseFloat(e.target.value) })
+                  }
+                />
+              </div>
+
+              {activeSceneId !== 'wet_night_bokeh_street' && (
+                <button
+                  onClick={() => {
+                    if (onJumpToScene) onJumpToScene('wet_night_bokeh_street');
+                    const tele85 = CAMERA_LENSES.find((l) => l.id === '85mm_f12');
+                    if (tele85 && onSelectLens) onSelectLens(tele85);
+                  }}
+                  style={{
+                    padding: '9px 12px',
+                    background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.22), rgba(236, 72, 153, 0.22))',
+                    border: '1px solid rgba(56, 189, 248, 0.45)',
+                    borderRadius: '6px',
+                    color: '#f8fafc',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '7px',
+                  }}
+                >
+                  <Crosshair size={13} color="#38bdf8" />
+                  <span>Test Wet-Night Neon Bokeh + Canon 85mm f/1.2L</span>
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
         {/* ================= TAB: LIGHTING & CINEMATIC FX ================= */}
         {activeTab === 'lighting' && (
           <>
+            {/* Interactive Pro Cyclorama Lighting Studio Rig */}
+            {activeSceneId === 'pro_lighting_studio' ? (
+              <div
+                style={{
+                  background: 'linear-gradient(180deg, rgba(56, 189, 248, 0.12), rgba(15, 23, 42, 0.6))',
+                  padding: '14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '13px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles size={14} color="#38bdf8" />
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff', letterSpacing: '0.5px' }}>
+                      PRO CYCLORAMA LIGHTING STUDIO
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                    LIVE CLEARCOAT IBL
+                  </span>
+                </div>
+
+                {/* 1-Click Studio Looks */}
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#cbd5e1', marginBottom: '6px' }}>
+                    1-Click Commercial Studio Looks
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                    {Object.values(STUDIO_LOOK_PRESETS).map((look) => {
+                      const active = proStudioState.presetId === look.id;
+                      return (
+                        <button
+                          key={look.id}
+                          onClick={() => onApplyProStudioPreset && onApplyProStudioPreset(look.id)}
+                          style={{
+                            padding: '8px 10px',
+                            background: active ? 'rgba(56, 189, 248, 0.22)' : 'rgba(15, 23, 42, 0.85)',
+                            border: `1px solid ${active ? '#38bdf8' : 'rgba(255, 255, 255, 0.1)'}`,
+                            borderRadius: '5px',
+                            color: active ? '#ffffff' : '#cbd5e1',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {look.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Cyclorama Floor Finish Switcher */}
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#cbd5e1', marginBottom: '6px' }}>
+                    Cyclorama Cove Floor Finish
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                    {STUDIO_FLOOR_FINISHES.map((fl) => {
+                      const active = proStudioState.floorFinish === fl.id;
+                      return (
+                        <button
+                          key={fl.id}
+                          onClick={() =>
+                            onChangeProStudioState && onChangeProStudioState({ floorFinish: fl.id })
+                          }
+                          style={{
+                            padding: '7px 9px',
+                            background: active ? 'rgba(168, 85, 247, 0.22)' : 'rgba(255, 255, 255, 0.04)',
+                            border: `1px solid ${active ? '#c084fc' : 'rgba(255, 255, 255, 0.09)'}`,
+                            borderRadius: '5px',
+                            color: active ? '#f3e8ff' : '#94a3b8',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {fl.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Individual Studio Fixtures */}
+                {[
+                  { label: 'Overhead Softbox Scrim', intKey: 'overheadIntensity', colKey: 'overheadColor', max: 4.0 },
+                  { label: 'Left Strip Rim Bank', intKey: 'leftRimIntensity', colKey: 'leftRimColor', max: 4.0 },
+                  { label: 'Right Strip Rim Bank', intKey: 'rightRimIntensity', colKey: 'rightRimColor', max: 4.0 },
+                  { label: 'Macro Ring Light', intKey: 'ringLightIntensity', colKey: 'ringLightColor', max: 4.0 },
+                  { label: 'Venetian Blind Gobo', intKey: 'goboIntensity', colKey: 'goboColor', max: 5.0 },
+                ].map((fx) => (
+                  <div key={fx.intKey} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#e2e8f0' }}>
+                      <span>{fx.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="color"
+                          value={proStudioState[fx.colKey] || '#ffffff'}
+                          onChange={(e) =>
+                            onChangeProStudioState &&
+                            onChangeProStudioState({ [fx.colKey]: e.target.value })
+                          }
+                          style={{ width: '22px', height: '18px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', width: '34px', textAlign: 'right' }}>
+                          {Number(proStudioState[fx.intKey] ?? 0).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max={fx.max}
+                      step="0.05"
+                      value={proStudioState[fx.intKey] ?? 0}
+                      onChange={(e) =>
+                        onChangeProStudioState &&
+                        onChangeProStudioState({ [fx.intKey]: parseFloat(e.target.value) })
+                      }
+                    />
+                  </div>
+                ))}
+
+                {/* Backdrop Wall Tint & Motorized Turntable */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: '#cbd5e1' }}>Cyc Backdrop</span>
+                    <input
+                      type="color"
+                      value={proStudioState.cycWallColor || '#dcdfe6'}
+                      onChange={(e) =>
+                        onChangeProStudioState &&
+                        onChangeProStudioState({ cycWallColor: e.target.value })
+                      }
+                      style={{ width: '24px', height: '20px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                    />
+                  </div>
+                  <button
+                    onClick={() =>
+                      onChangeProStudioState &&
+                      onChangeProStudioState({ turntableEnabled: !proStudioState.turntableEnabled })
+                    }
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '5px 10px',
+                      background: proStudioState.turntableEnabled
+                        ? 'rgba(16, 185, 129, 0.22)'
+                        : 'rgba(255, 255, 255, 0.06)',
+                      border: `1px solid ${proStudioState.turntableEnabled ? '#34d399' : 'rgba(255,255,255,0.12)'}`,
+                      borderRadius: '5px',
+                      color: proStudioState.turntableEnabled ? '#34d399' : '#94a3b8',
+                      fontSize: '10.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <RotateCw size={12} />
+                    <span>{proStudioState.turntableEnabled ? 'Turntable ON' : 'Turntable OFF'}</span>
+                  </button>
+                </div>
+
+                {proStudioState.turntableEnabled && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#94a3b8', marginBottom: '3px' }}>
+                      <span>Turntable Rotation Speed</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>
+                        {Number(proStudioState.turntableSpeed ?? 0.25).toFixed(2)} rad/s
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1.2"
+                      step="0.02"
+                      value={proStudioState.turntableSpeed ?? 0.25}
+                      onChange={(e) =>
+                        onChangeProStudioState &&
+                        onChangeProStudioState({ turntableSpeed: parseFloat(e.target.value) })
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => onJumpToScene && onJumpToScene('pro_lighting_studio')}
+                style={{
+                  padding: '11px 14px',
+                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(168, 85, 247, 0.16))',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#f8fafc',
+                  fontSize: '11.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span>Switch to Pro Cyclorama Lighting Studio</span>
+                <span style={{ fontSize: '10px', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>5 RIGS →</span>
+              </button>
+            )}
+
             {/* Location-Specific Matched Film Moods */}
             {activeScenePresets && activeScenePresets.length > 0 && (
               <div

@@ -26,8 +26,8 @@ const DECAL_TOKENS = new Set([
 ]);
 
 const GLASS_TOKENS = new Set([
-  'glass', 'glasses', 'window', 'windows', 'windshield', 'windscreen',
-  'vitre', 'canopy', 'visor', 'hud',
+  'glass', 'glasses', 'glas', 'window', 'windows', 'windo', 'windofs', 'windor',
+  'windshield', 'windscreen', 'vitre', 'canopy', 'visor', 'hud',
 ]);
 
 const LIGHT_GLASS_SUBS = ['lightglass', 'light_glass', 'headlight_glass', 'lens_glass', 'glass_light'];
@@ -38,7 +38,10 @@ const LIGHT_EMITTER_TOKENS = new Set([
 ]);
 
 const CARBON_TOKENS = new Set(['carbon', 'carbonfiber', 'cf', 'kevlar']);
-const TIRE_TOKENS = new Set(['tire', 'tires', 'tyre', 'tyres', 'rubber', 'gomma', 'tread', 'proxes']);
+const TIRE_TOKENS = new Set([
+  'tire', 'tires', 'tyre', 'tyres', 'tyrewall', 'tyrewallblack', 'tirewall',
+  'sidewall', 'rubber', 'gomma', 'tread', 'proxes',
+]);
 const RIM_TOKENS = new Set(['rim', 'rims', 'alloy', 'bbs', 'spoke', 'rotor', 'disc', 'diskbrake', 'caliper', 'calliper', 'exhaust', 'chrome']);
 const INTERIOR_TOKENS = new Set([
   'interior', 'int', 'cockpit', 'seat', 'seats', 'belt', 'cinture', 'carpet',

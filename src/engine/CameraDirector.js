@@ -3,6 +3,8 @@ import * as THREE from 'three';
 const ENCLOSED_SCENES = new Set([
   'car_garage',
   'red_bull_f1_garage',
+  'detailed_parking_garage',
+  'velvet_curtain_showroom',
   'f1_pit_garage',
   'interior_7',
   'abandoned_vr_gallery',
@@ -13,6 +15,27 @@ const ENCLOSED_SCENES = new Set([
   'catwalk',
 ]);
 
+// Safe interior wall pullback limits for 4-wall GLB rooms so telephoto auto-dolly never clips outside walls
+const TIGHT_WALL_MAX_DIST = {
+  velvet_curtain_showroom: 5.85,
+  car_garage: 8.2,
+  red_bull_f1_garage: 8.2,
+  f1_pit_garage: 8.2,
+  detailed_parking_garage: 9.2,
+  interior_7: 8.8,
+  abandoned_vr_gallery: 10.2,
+  building_interior_scan: 10.2,
+  cyberpunk_garage: 13.5,
+  desert_workshop_garage: 13.5,
+  catwalk: 13.5,
+};
+
+export function focalLengthToVerticalFovDeg(focalLengthMm) {
+  const f = Math.max(12, Math.min(600, Number(focalLengthMm) || 32));
+  // Full-frame 35mm sensor: 36mm x 24mm -> vertical half-height = 12mm
+  return THREE.MathUtils.radToDeg(2.0 * Math.atan(12.0 / f));
+}
+
 export class CameraDirector {
   constructor(camera, controls) {
     this.camera = camera;
@@ -20,11 +43,14 @@ export class CameraDirector {
 
     this.activeShotId = 'free_orbit';
     this.shotSpeed = 1.0;
+    this.referenceFov = 42;
     this.baseFov = 42;
+    this.focalLengthMm = 31; // ~42 deg vertical FOV on full-frame
+    this.baseMaxDistance = 420;
     this.bounds = { w: 2.2, h: 1.4, d: 4.8 };
     this.subjectYOffset = 0;
     this.subjectHolder = null;
-    this.sceneId = 'interior_7';
+    this.sceneId = 'pro_lighting_studio';
 
     // Multi-shot sequence state
     this.isPlayingSequence = false;
@@ -44,10 +70,93 @@ export class CameraDirector {
     this._localCam = new THREE.Vector3();
     this._localTarget = new THREE.Vector3();
     this._yAxis = new THREE.Vector3(0, 1, 0);
+    this._dollyVec = new THREE.Vector3();
   }
 
   bindSubjectHolder(holder) {
     this.subjectHolder = holder;
+  }
+
+  _getSafeMaxDollyDistance() {
+    const tightWall = TIGHT_WALL_MAX_DIST[this.sceneId];
+    if (tightWall) return tightWall;
+    if (this.sceneId === 'pro_lighting_studio') return 46.0;
+    if (this.sceneId === 'warehouse_courtyard_day') return 52.0;
+    if (this.sceneId === 'city_bokeh_street_day' || this.sceneId === 'wet_night_bokeh_street') return 68.0;
+    return 420.0;
+  }
+
+  /**
+   * Switches physical full-frame focal length (mm) and performs automatic camera dolly pullback/push-in
+   * along the current viewing ray so the vehicle stays consistently framed.
+   */
+  setPhysicalLens(focalLengthMm, { autoDolly = true } = {}) {
+    if (focalLengthMm == null) {
+      const prevFov = this.camera.fov || this.baseFov || this.referenceFov;
+      const nextFov = this.referenceFov;
+      this.focalLengthMm = null;
+      this.baseFov = nextFov;
+      this.controls.maxDistance = this.baseMaxDistance;
+
+      if (this.activeShotId === 'free_orbit') {
+        if (autoDolly) {
+          this._dollyVec.subVectors(this.camera.position, this.controls.target);
+          const curDist = this._dollyVec.length();
+          if (curDist > 0.05) {
+            const prevHalfTan = Math.tan(THREE.MathUtils.degToRad(prevFov) * 0.5);
+            const nextHalfTan = Math.tan(THREE.MathUtils.degToRad(nextFov) * 0.5);
+            const ratio = prevHalfTan / Math.max(0.01, nextHalfTan);
+            const safeMax = this._getSafeMaxDollyDistance();
+            const nextDist = THREE.MathUtils.clamp(curDist * ratio, this.controls.minDistance || 1.0, safeMax);
+            this._dollyVec.normalize().multiplyScalar(nextDist);
+            this.camera.position.copy(this.controls.target).add(this._dollyVec);
+          }
+        }
+        this.camera.fov = nextFov;
+        this.camera.updateProjectionMatrix();
+        this.controls.update();
+      }
+
+      return {
+        focalLengthMm: null,
+        fovDeg: nextFov,
+        distance: this.camera.position.distanceTo(this.controls.target),
+      };
+    }
+
+    const clampedMm = Math.max(14, Math.min(400, Number(focalLengthMm) || 35));
+    const prevFov = this.camera.fov || this.baseFov || 42;
+    const nextFov = focalLengthToVerticalFovDeg(clampedMm);
+
+    this.focalLengthMm = clampedMm;
+    this.baseFov = nextFov;
+
+    const safeMax = this._getSafeMaxDollyDistance();
+    this.controls.maxDistance = Math.max(this.baseMaxDistance, safeMax);
+
+    if (this.activeShotId === 'free_orbit') {
+      if (autoDolly) {
+        this._dollyVec.subVectors(this.camera.position, this.controls.target);
+        const curDist = this._dollyVec.length();
+        if (curDist > 0.05) {
+          const prevHalfTan = Math.tan(THREE.MathUtils.degToRad(prevFov) * 0.5);
+          const nextHalfTan = Math.tan(THREE.MathUtils.degToRad(nextFov) * 0.5);
+          const ratio = prevHalfTan / Math.max(0.01, nextHalfTan);
+          const nextDist = THREE.MathUtils.clamp(curDist * ratio, this.controls.minDistance || 1.0, safeMax);
+          this._dollyVec.normalize().multiplyScalar(nextDist);
+          this.camera.position.copy(this.controls.target).add(this._dollyVec);
+        }
+      }
+      this.camera.fov = nextFov;
+      this.camera.updateProjectionMatrix();
+      this.controls.update();
+    }
+
+    return {
+      focalLengthMm: clampedMm,
+      fovDeg: nextFov,
+      distance: this.camera.position.distanceTo(this.controls.target),
+    };
   }
 
   _applySubjectFrame(localCam, localTarget) {
@@ -66,31 +175,56 @@ export class CameraDirector {
 
   setSceneId(sceneId) {
     this.sceneId = sceneId;
-    if (sceneId === 'car_garage' || sceneId === 'red_bull_f1_garage' || sceneId === 'f1_pit_garage') {
-      this.controls.maxDistance = 8.5;
+    if (
+      sceneId === 'car_garage' ||
+      sceneId === 'red_bull_f1_garage' ||
+      sceneId === 'f1_pit_garage'
+    ) {
+      this.baseMaxDistance = 8.5;
+      this.controls.minDistance = 1.0;
+      this.controls.maxPolarAngle = Math.PI * 0.495;
+    } else if (sceneId === 'velvet_curtain_showroom') {
+      this.baseMaxDistance = 6.2;
+      this.controls.minDistance = 1.0;
+      this.controls.maxPolarAngle = Math.PI * 0.495;
+    } else if (sceneId === 'detailed_parking_garage') {
+      this.baseMaxDistance = 9.2;
       this.controls.minDistance = 1.0;
       this.controls.maxPolarAngle = Math.PI * 0.495;
     } else if (sceneId === 'interior_7') {
-      this.controls.maxDistance = 9.0;
+      this.baseMaxDistance = 9.0;
       this.controls.minDistance = 1.0;
       this.controls.maxPolarAngle = Math.PI * 0.495;
     } else if (sceneId === 'abandoned_vr_gallery' || sceneId === 'building_interior_scan') {
-      this.controls.maxDistance = 10.5;
+      this.baseMaxDistance = 10.5;
       this.controls.minDistance = 1.0;
       this.controls.maxPolarAngle = Math.PI * 0.495;
     } else if (sceneId === 'cyberpunk_garage' || sceneId === 'desert_workshop_garage' || sceneId === 'catwalk') {
-      this.controls.maxDistance = 14.0;
+      this.baseMaxDistance = 14.0;
       this.controls.minDistance = 1.0;
       this.controls.maxPolarAngle = Math.PI * 0.495;
     } else if (sceneId === 'wind_tunnel' || sceneId === 'architectural_exhibition_hall') {
-      this.controls.maxDistance = 24.0;
+      this.baseMaxDistance = 24.0;
       this.controls.minDistance = 1.2;
       this.controls.maxPolarAngle = Math.PI * 0.495;
+    } else if (sceneId === 'pro_lighting_studio') {
+      this.baseMaxDistance = 46.0;
+      this.controls.minDistance = 1.1;
+      this.controls.maxPolarAngle = Math.PI * 0.495;
+    } else if (sceneId === 'warehouse_courtyard_day') {
+      this.baseMaxDistance = 52.0;
+      this.controls.minDistance = 1.1;
+      this.controls.maxPolarAngle = Math.PI * 0.495;
+    } else if (sceneId === 'city_bokeh_street_day' || sceneId === 'wet_night_bokeh_street') {
+      this.baseMaxDistance = 68.0;
+      this.controls.minDistance = 1.1;
+      this.controls.maxPolarAngle = Math.PI * 0.495;
     } else {
-      this.controls.maxDistance = 420;
+      this.baseMaxDistance = 420;
       this.controls.minDistance = 1.2;
       this.controls.maxPolarAngle = Math.PI * 0.495;
     }
+    this.controls.maxDistance = Math.max(this.baseMaxDistance, this._getSafeMaxDollyDistance());
     if (this.activeShotId === 'free_orbit') {
       this.resetToHeroIso();
     }
@@ -120,15 +254,30 @@ export class CameraDirector {
     } else if (
       this.sceneId === 'car_garage' ||
       this.sceneId === 'red_bull_f1_garage' ||
-      this.sceneId === 'f1_pit_garage'
+      this.sceneId === 'f1_pit_garage' ||
+      this.sceneId === 'detailed_parking_garage'
     ) {
       localCam.set(-3.6, Math.max(1.08, h * 0.9) + this.subjectYOffset, -3.5);
+    } else if (this.sceneId === 'velvet_curtain_showroom') {
+      localCam.set(-2.9, Math.max(1.06, h * 0.88) + this.subjectYOffset, -3.3);
+    } else if (this.sceneId === 'pro_lighting_studio') {
+      localCam.set(-span * 0.94, Math.max(1.12, h * 0.86) + this.subjectYOffset, -span * 1.15);
+      localTarget.set(0, h * 0.44 + this.subjectYOffset, -d * 0.04);
+    } else if (
+      this.sceneId === 'warehouse_courtyard_day' ||
+      this.sceneId === 'city_bokeh_street_day' ||
+      this.sceneId === 'wet_night_bokeh_street' ||
+      this.sceneId === 'monaco_circuit' ||
+      this.sceneId === 'marina_bay_circuit'
+    ) {
+      // Low 3/4 automotive hero framing looking down the street/dock/track bokeh corridor
+      localCam.set(-span * 0.90, Math.max(1.04, h * 0.82) + this.subjectYOffset, -span * 1.18);
+      localTarget.set(0, h * 0.44 + this.subjectYOffset, d * 0.04);
     } else if (this.sceneId === 'abandoned_vr_gallery' || this.sceneId === 'building_interior_scan') {
       localCam.set(-3.8, Math.max(1.18, h * 0.92) + this.subjectYOffset, -4.0);
     } else if (this.sceneId === 'wind_tunnel') {
       localCam.set(-4.2, Math.max(1.2, h * 0.95) + this.subjectYOffset, -4.6);
     } else if (this.sceneId === 'vatican_city' || this.sceneId === 'eglise_saint_polycarpe') {
-      // Low architectural 3/4 hero angle tilted gently upward so St. Peter's Dome & heritage facades fill the upper frame
       localCam.set(-span * 1.02, Math.max(1.02, h * 0.78) + this.subjectYOffset, -span * 1.24);
       localTarget.set(0, Math.max(1.38, h * 1.08) + this.subjectYOffset, d * 0.12);
     } else if (
@@ -137,11 +286,27 @@ export class CameraDirector {
       this.sceneId === 'kent_lumber_yard' ||
       this.sceneId === 'construction_site'
     ) {
-      // Cinema street-level 3/4 front-left hero framing
       localCam.set(-span * 0.95, Math.max(1.15, h * 0.88) + this.subjectYOffset, -span * 1.18);
       localTarget.set(0, hMid, -d * 0.08);
     } else {
       localCam.set(-span * 1.05, Math.max(1.15, h * 1.05) + this.subjectYOffset, -span * 1.25);
+    }
+
+    // Scale initial hero distance to match active physical lens FOV so telephoto lenses frame the car cleanly
+    const refTan = Math.tan(THREE.MathUtils.degToRad(this.referenceFov) * 0.5);
+    const curTan = Math.tan(THREE.MathUtils.degToRad(this.baseFov) * 0.5);
+    const lensRatio = refTan / Math.max(0.01, curTan);
+    if (Math.abs(lensRatio - 1.0) > 0.02) {
+      this._dollyVec.subVectors(localCam, localTarget);
+      const baseDist = this._dollyVec.length();
+      const safeMax = this._getSafeMaxDollyDistance();
+      const scaledDist = THREE.MathUtils.clamp(baseDist * lensRatio, this.controls.minDistance || 1.0, safeMax);
+      this._dollyVec.normalize().multiplyScalar(scaledDist);
+      // Keep eye level natural on long telephoto lenses instead of soaring 12m into the air
+      if (lensRatio > 1.35) {
+        this._dollyVec.y = Math.min(this._dollyVec.y, Math.max(1.35, h * 1.15) + scaledDist * 0.06);
+      }
+      localCam.copy(localTarget).add(this._dollyVec);
     }
 
     this._applySubjectFrame(localCam, localTarget);
@@ -228,7 +393,8 @@ export class CameraDirector {
     const isTightGarage =
       this.sceneId === 'car_garage' ||
       this.sceneId === 'red_bull_f1_garage' ||
-      this.sceneId === 'f1_pit_garage';
+      this.sceneId === 'f1_pit_garage' ||
+      this.sceneId === 'velvet_curtain_showroom';
 
     const localCam = new THREE.Vector3();
     const localTarget = new THREE.Vector3(0, hMid, 0);
