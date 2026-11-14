@@ -1,4 +1,15 @@
-// Curated catalog of 22 Cars, 8 Planes, 21 Parts, 22 Scenes, 6 Weather States, Camera Moves, and 41 Music Tracks
+// Curated catalog of 22 Cars, 8 Planes, 21 Parts, 21 Scenes, Camera Moves, and 41 Music Tracks
+
+function isMobileDevice() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(ua);
+  const isTouchMac = /Macintosh/i.test(ua) && Boolean(navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+  const isSmallScreen =
+    typeof window.innerWidth === 'number' &&
+    Math.min(window.innerWidth, window.innerHeight) <= 820;
+  return isMobileUA || isTouchMac || (Boolean(navigator.maxTouchPoints && navigator.maxTouchPoints > 1) && isSmallScreen);
+}
 
 const IS_DEV = import.meta.env.DEV;
 const GITHUB_RAW_ROOT = 'https://raw.githubusercontent.com/SREphoto/3d-car-and-plane-scene-generator/main/3D%20Car%20and%20Plane%20Scene%20Creator';
@@ -881,7 +892,7 @@ export const PARTS_CATALOG = [
   },
 ];
 
-export const SCENES_CATALOG = [
+const ALL_SCENES_CATALOG = [
   {
     id: 'pro_lighting_studio',
     name: 'Pro Cyclorama Lighting Studio (Interactive)',
@@ -1159,16 +1170,6 @@ export const SCENES_CATALOG = [
     description: 'Metallic catwalk bay with brushed steel grates and dynamic spotlight framing.',
   },
   {
-    id: 'outdoor_world',
-    name: 'Alpine Highway & Tarmac (Weather + 24h)',
-    type: 'outdoor',
-    modes: ['cars', 'planes'],
-    badge: 'WEATHER + 24H',
-    description: 'Dynamic outdoor alpine pass & runway apron with Sunny, Cloudy, Drizzle, Thunderstorm, Snow, Blizzard & Snow Accumulation.',
-    defaultWeather: 'sunny',
-    defaultTimeOfDay: 16.5,
-  },
-  {
     id: 'dark_void',
     name: 'The Obsidian Void (Cinema Blackout Stage)',
     type: 'procedural',
@@ -1210,86 +1211,24 @@ export const SCENES_CATALOG = [
   },
 ];
 
-export const WEATHER_PRESETS = [
-  {
-    id: 'sunny',
-    name: 'Sunny',
-    icon: 'Sun',
-    description: 'Clear blue sky, crisp sun shadows, warm specular highlights.',
-    cloudCover: 0.1,
-    rainIntensity: 0,
-    snowIntensity: 0,
-    windSpeed: 0.2,
-    wetness: 0.0,
-    fogDensity: 0.0025,
-    lightning: false,
-  },
-  {
-    id: 'cloudy',
-    name: 'Cloudy',
-    icon: 'Cloud',
-    description: 'Overcast cloud canopy, soft diffused shadows, cool atmospheric haze.',
-    cloudCover: 0.82,
-    rainIntensity: 0,
-    snowIntensity: 0,
-    windSpeed: 0.35,
-    wetness: 0.15,
-    fogDensity: 0.007,
-    lightning: false,
-  },
-  {
-    id: 'drizzle',
-    name: 'Drizzle',
-    icon: 'CloudDrizzle',
-    description: 'Light angled rainfall, glossy wet asphalt reflections, and puddle ripples.',
-    cloudCover: 0.88,
-    rainIntensity: 0.45,
-    snowIntensity: 0,
-    windSpeed: 0.4,
-    wetness: 0.82,
-    fogDensity: 0.011,
-    lightning: false,
-  },
-  {
-    id: 'thunderstorm',
-    name: 'Thunderstorm',
-    icon: 'CloudLightning',
-    description: 'Torrential rain sheets, deep storm clouds, mirror puddles, and lightning flashes.',
-    cloudCover: 1.0,
-    rainIntensity: 1.0,
-    snowIntensity: 0,
-    windSpeed: 0.9,
-    wetness: 0.96,
-    fogDensity: 0.016,
-    lightning: true,
-  },
-  {
-    id: 'snow',
-    name: 'Snow',
-    icon: 'Snowflake',
-    description: 'Gentle drifting snowflakes with progressive snow accumulation on ground & vehicle.',
-    cloudCover: 0.85,
-    rainIntensity: 0,
-    snowIntensity: 0.55,
-    windSpeed: 0.3,
-    wetness: 0.2,
-    fogDensity: 0.012,
-    lightning: false,
-  },
-  {
-    id: 'blizzard',
-    name: 'Blizzard',
-    icon: 'Wind',
-    description: 'Fierce horizontal snow squall, dense whiteout fog, and rapid snow accumulation.',
-    cloudCover: 1.0,
-    rainIntensity: 0,
-    snowIntensity: 1.0,
-    windSpeed: 1.0,
-    wetness: 0.1,
-    fogDensity: 0.026,
-    lightning: false,
-  },
-];
+// Giant photogrammetry / 8K-atlas scenes (24-54 MB GLBs, up to 1M verts) exceed a phone tab's memory
+// budget while decoding, so they are hidden on mobile. Desktop gets the full list.
+export const MOBILE_HIDDEN_SCENE_IDS = new Set([
+  'la_night_city',
+  'vatican_city',
+  'marina_bay_circuit',
+  'interior_7',
+  'abandoned_vr_gallery',
+  'canadian_downtown',
+  'kent_lumber_yard',
+  'eglise_saint_polycarpe',
+  'building_interior_scan',
+  'architectural_exhibition_hall',
+]);
+
+export const SCENES_CATALOG = isMobileDevice()
+  ? ALL_SCENES_CATALOG.filter((s) => !MOBILE_HIDDEN_SCENE_IDS.has(s.id))
+  : ALL_SCENES_CATALOG;
 
 export const LIGHTING_PRESETS = [
   {

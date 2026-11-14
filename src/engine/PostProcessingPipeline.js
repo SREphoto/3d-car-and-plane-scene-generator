@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+import { isMobileDevice } from './device.js';
 
 /**
  * Physical Full-Frame (36x24mm) Linear-HDR Optical Bokeh Pass.
@@ -77,8 +78,10 @@ const LinearHdrOpticalBokehShader = {
       vec3 accumColor = baseSample.rgb;
       float accumWeight = 1.0;
 
-      // 48-tap Vogel golden-angle optical aperture disc in Linear HDR
-      const int NUM_TAPS = 48;
+      // Golden-angle optical aperture disc in Linear HDR (tap count dynamically scaled for mobile)
+      #ifndef NUM_TAPS
+      #define NUM_TAPS 48
+      #endif
       const float GOLDEN_ANGLE = 2.39996323;
 
       // Probe max nearby CoC slightly larger than centerCoc so foreground out-of-focus edges stay smooth
@@ -141,10 +144,12 @@ class OpticalBokehPass extends Pass {
     this.camera = camera;
     this.enabled = false;
 
+    // RGBADepthPacking packs 32-bit depth into 4 8-bit channels; UnsignedByteType avoids
+    // mobile floating-point framebuffer crashes and cuts depth target memory by 50%
     this.renderTargetDepth = new THREE.WebGLRenderTarget(1, 1, {
       minFilter: THREE.NearestFilter,
       magFilter: THREE.NearestFilter,
-      type: THREE.HalfFloatType,
+      type: THREE.UnsignedByteType,
     });
     this.renderTargetDepth.texture.name = 'OpticalBokehPass.depth';
 
@@ -156,7 +161,11 @@ class OpticalBokehPass extends Pass {
     this.uniforms = THREE.UniformsUtils.clone(LinearHdrOpticalBokehShader.uniforms);
     this.uniforms.tDepth.value = this.renderTargetDepth.texture;
 
+    const isMobile = isMobileDevice();
     this.materialBokeh = new THREE.ShaderMaterial({
+      defines: {
+        NUM_TAPS: isMobile ? 16 : 48,
+      },
       uniforms: this.uniforms,
       vertexShader: LinearHdrOpticalBokehShader.vertexShader,
       fragmentShader: LinearHdrOpticalBokehShader.fragmentShader,
@@ -206,10 +215,15 @@ class OpticalBokehPass extends Pass {
   }
 
   setSize(width, height) {
-    const w = Math.max(1, Math.floor(width));
-    const h = Math.max(1, Math.floor(height));
+    this._targetW = width;
+    this._targetH = height;
+    if (!this.enabled) return;
+    const isMobile = isMobileDevice();
+    const depthScale = isMobile ? 0.5 : 1.0;
+    const w = Math.max(1, Math.floor(width * depthScale));
+    const h = Math.max(1, Math.floor(height * depthScale));
     this.renderTargetDepth.setSize(w, h);
-    this.uniforms.uAspect.value = w / h;
+    this.uniforms.uAspect.value = width / height;
   }
 
   dispose() {
@@ -293,10 +307,27 @@ export class PostProcessingPipeline {
     const effW = Math.max(1, Math.floor(size.x * dpr));
     const effH = Math.max(1, Math.floor(size.y * dpr));
 
-    const renderTarget = new THREE.WebGLRenderTarget(effW, effH, {
-      type: THREE.HalfFloatType,
-      samples: 4,
-    });
+    const isMobile = isMobileDevice();
+    // On mobile devices (Metal, Adreno, Mali), WebGL2 multisample HalfFloatType render targets
+    // often exhaust VRAM or fail framebuffer status with FRAMEBUFFER_INCOMPLETE_MULTISAMPLE.
+    // UnsignedByteType with 0 samples is lightweight, stable, and uses 75% less framebuffer memory.
+    const samples = isMobile ? 0 : 4;
+    const targetType = isMobile ? THREE.UnsignedByteType : THREE.HalfFloatType;
+
+    let renderTarget;
+    try {
+      renderTarget = new THREE.WebGLRenderTarget(effW, effH, {
+        type: targetType,
+        samples: samples,
+      });
+    } catch (err) {
+      console.warn('Primary render target creation failed, falling back to basic UnsignedByteType:', err);
+      renderTarget = new THREE.WebGLRenderTarget(effW, effH, {
+        type: THREE.UnsignedByteType,
+        samples: 0,
+      });
+    }
+
     this.composer = new EffectComposer(renderer, renderTarget);
 
     this.renderPass = new RenderPass(scene, camera);
@@ -308,8 +339,12 @@ export class PostProcessingPipeline {
     this.composer.addPass(this.bokehPass);
 
     // Subtle HDR bloom strictly on real emissive light sources > 1.08
+    // On mobile, scale bloom resolution down to 40% to save 10 full/half-res mip buffers
+    const bloomRes = isMobile
+      ? new THREE.Vector2(Math.max(1, Math.floor(size.x * 0.4)), Math.max(1, Math.floor(size.y * 0.4)))
+      : new THREE.Vector2(size.x, size.y);
     this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(size.x, size.y),
+      bloomRes,
       0.12,
       0.2,
       1.08
@@ -331,7 +366,15 @@ export class PostProcessingPipeline {
     this.composer.setSize(width, height);
     const dpr = this.renderer.getPixelRatio ? this.renderer.getPixelRatio() : 1;
     this.bokehPass.setSize(width * dpr, height * dpr);
-    this.bloomPass.resolution.set(width, height);
+    const isMobile = isMobileDevice();
+    if (isMobile) {
+      this.bloomPass.resolution.set(
+        Math.max(1, Math.floor(width * 0.4)),
+        Math.max(1, Math.floor(height * 0.4))
+      );
+    } else {
+      this.bloomPass.resolution.set(width, height);
+    }
   }
 
   setDofConfig({
@@ -343,7 +386,11 @@ export class PostProcessingPipeline {
     maxCocUv,
   } = {}) {
     if (typeof enabled === 'boolean') {
+      const prev = this.bokehPass.enabled;
       this.bokehPass.enabled = enabled;
+      if (enabled && !prev && this.bokehPass._targetW && this.bokehPass._targetH) {
+        this.bokehPass.setSize(this.bokehPass._targetW, this.bokehPass._targetH);
+      }
     }
     if (typeof focalLengthMm === 'number' && Number.isFinite(focalLengthMm)) {
       this.bokehPass.uniforms.uFocalLengthMm.value = Math.max(12, Math.min(600, focalLengthMm));
@@ -396,6 +443,13 @@ export class PostProcessingPipeline {
 
   dispose() {
     this.bokehPass.dispose();
+    if (this.bloomPass) {
+      this.bloomPass.dispose?.();
+    }
+    if (this.composer) {
+      this.composer.renderTarget1?.dispose();
+      this.composer.renderTarget2?.dispose();
+    }
   }
 
   render(deltaTime = 0.016) {
@@ -403,7 +457,13 @@ export class PostProcessingPipeline {
       this.renderer.render(this.scene, this.camera);
       return;
     }
-    this.gradePass.uniforms.uTime.value += deltaTime;
-    this.composer.render();
+    try {
+      this.gradePass.uniforms.uTime.value += deltaTime;
+      this.composer.render();
+    } catch (err) {
+      console.warn('[PostProcessingPipeline] Framebuffer / composer render error, falling back to direct render:', err);
+      this.enabled = false;
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isMobileDevice } from './device.js';
 
 /**
  * High-DPI Procedural Tiled-PBR Stages & Interactive Pro Lighting Studio
@@ -100,22 +101,27 @@ export const STUDIO_FLOOR_FINISHES = [
   { id: 'brushed_concrete', name: 'Brushed Concrete' },
 ];
 
+// Mobile GPUs: scale down shadow-map resolution to save VRAM
+const STAGE_SHADOW_SIZE = isMobileDevice() ? 512 : 2048;
+
 function hash2(x, y) {
   const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
   return s - Math.floor(s);
 }
 
 function makeTiledCanvasTexture(drawFn, size = 1024, repeatX = 12, repeatY = 12, isSRGB = true, maxAniso = 16) {
+  const isMobile = isMobileDevice();
+  const effSize = isMobile ? Math.min(size, 512) : size;
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = effSize;
+  canvas.height = effSize;
   const ctx = canvas.getContext('2d');
-  drawFn(ctx, size);
+  drawFn(ctx, effSize);
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
-  tex.anisotropy = maxAniso;
+  tex.anisotropy = isMobile ? Math.min(2, maxAniso) : maxAniso;
   tex.colorSpace = isSRGB ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   tex.needsUpdate = true;
   return tex;
@@ -125,21 +131,23 @@ function makeTiledCanvasTexture(drawFn, size = 1024, repeatX = 12, repeatY = 12,
  * Generates a tileable tangent-space normal map from a procedural heightfield callback h(u, v) in [0..1]
  */
 function makeProceduralNormalMap(heightFn, size = 512, repeatX = 12, repeatY = 12, strength = 2.5, maxAniso = 16) {
-  const data = new Uint8Array(size * size * 4);
-  const heights = new Float32Array(size * size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      heights[y * size + x] = heightFn(x / size, y / size, x, y, size);
+  const isMobile = isMobileDevice();
+  const effSize = isMobile ? Math.min(size, 256) : size;
+  const data = new Uint8Array(effSize * effSize * 4);
+  const heights = new Float32Array(effSize * effSize);
+  for (let y = 0; y < effSize; y++) {
+    for (let x = 0; x < effSize; x++) {
+      heights[y * effSize + x] = heightFn(x / effSize, y / effSize, x, y, effSize);
     }
   }
-  for (let y = 0; y < size; y++) {
-    const ym = (y - 1 + size) % size;
-    const yp = (y + 1) % size;
-    for (let x = 0; x < size; x++) {
-      const xm = (x - 1 + size) % size;
-      const xp = (x + 1) % size;
-      const dx = (heights[y * size + xp] - heights[y * size + xm]) * strength;
-      const dy = (heights[yp * size + x] - heights[ym * size + x]) * strength;
+  for (let y = 0; y < effSize; y++) {
+    const ym = (y - 1 + effSize) % effSize;
+    const yp = (y + 1) % effSize;
+    for (let x = 0; x < effSize; x++) {
+      const xm = (x - 1 + effSize) % effSize;
+      const xp = (x + 1) % effSize;
+      const dx = (heights[y * effSize + xp] - heights[y * effSize + xm]) * strength;
+      const dy = (heights[yp * effSize + x] - heights[ym * effSize + x]) * strength;
       let nx = -dx;
       let ny = -dy;
       let nz = 1.0;
@@ -147,18 +155,18 @@ function makeProceduralNormalMap(heightFn, size = 512, repeatX = 12, repeatY = 1
       nx /= len;
       ny /= len;
       nz /= len;
-      const idx = (y * size + x) * 4;
+      const idx = (y * effSize + x) * 4;
       data[idx] = Math.round((nx * 0.5 + 0.5) * 255);
       data[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
       data[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
       data[idx + 3] = 255;
     }
   }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  const tex = new THREE.DataTexture(data, effSize, effSize, THREE.RGBAFormat);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
-  tex.anisotropy = maxAniso;
+  tex.anisotropy = isMobile ? Math.min(2, maxAniso) : maxAniso;
   tex.colorSpace = THREE.NoColorSpace;
   tex.needsUpdate = true;
   return tex;
@@ -362,7 +370,7 @@ function createAsphaltMaps(maxAniso = 16, repeatX = 16, repeatY = 36, isWetNight
  * 1. INSIDE PRO LIGHTING STUDIO (`pro_lighting_studio`)
  */
 export function buildProLightingStudioStage(renderer, initialState = {}) {
-  const maxAniso = renderer?.capabilities?.getMaxAnisotropy?.() || 16;
+  const maxAniso = Math.min(renderer?.capabilities?.getMaxAnisotropy?.() || 16, isMobileDevice() ? 2 : 16);
   const group = new THREE.Group();
   group.name = 'ProLightingStudioStage';
 
@@ -514,7 +522,7 @@ export function buildProLightingStudioStage(renderer, initialState = {}) {
   overheadSpot.position.set(0, 3.8, -0.2);
   overheadSpot.target.position.set(0, 0.4, -0.2);
   overheadSpot.castShadow = true;
-  overheadSpot.shadow.mapSize.set(2048, 2048);
+  overheadSpot.shadow.mapSize.set(STAGE_SHADOW_SIZE, STAGE_SHADOW_SIZE);
   overheadSpot.shadow.bias = -0.00025;
   group.add(overheadSpot);
   group.add(overheadSpot.target);
@@ -579,7 +587,7 @@ export function buildProLightingStudioStage(renderer, initialState = {}) {
   goboSpot.position.set(5.6, 4.9, -4.4);
   goboSpot.target.position.set(0, 0.35, 0.0);
   goboSpot.castShadow = true;
-  goboSpot.shadow.mapSize.set(2048, 2048);
+  goboSpot.shadow.mapSize.set(STAGE_SHADOW_SIZE, STAGE_SHADOW_SIZE);
   goboSpot.shadow.camera.near = 1.2;
   goboSpot.shadow.camera.far = 22.0;
   goboSpot.shadow.bias = -0.00015;

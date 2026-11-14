@@ -4,6 +4,7 @@ import {
   createSkyGradientTexture,
   getEnvironmentSceneForSceneId,
 } from './StudioEnvironment.js';
+import { isMobileDevice } from './device.js';
 
 /**
  * Physical Scene Lighting Profiles:
@@ -574,16 +575,24 @@ export class LightingRig {
     // PMREM + Real-time 360° Scene Reflection Probe (CubeCamera)
     this.pmremGenerator = new THREE.PMREMGenerator(renderer);
     this.pmremGenerator.compileEquirectangularShader();
-    this.pmremGenerator.compileCubemapShader();
+    const isMobile = isMobileDevice();
+    if (!isMobile) {
+      this.pmremGenerator.compileCubemapShader();
+    }
     this.envCache = new Map();
     this.skyDomeCache = new Map();
 
-    this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
-      type: THREE.HalfFloatType,
-      generateMipmaps: true,
-      minFilter: THREE.LinearMipmapLinearFilter,
-    });
-    this.cubeCamera = new THREE.CubeCamera(0.25, 1800, this.cubeRenderTarget);
+    if (!isMobile) {
+      this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
+        type: THREE.HalfFloatType,
+        generateMipmaps: true,
+        minFilter: THREE.LinearMipmapLinearFilter,
+      });
+      this.cubeCamera = new THREE.CubeCamera(0.25, 1800, this.cubeRenderTarget);
+    } else {
+      this.cubeRenderTarget = null;
+      this.cubeCamera = null;
+    }
     this.liveProbePMREM = null;
 
     const studioEnvScene = createAutomotiveStudioScene();
@@ -645,7 +654,8 @@ export class LightingRig {
     // Primary Key Directional Light with movable target so shadows track vehicle movement anywhere!
     this.keyLight = new THREE.DirectionalLight('#ffffff', 2.4);
     this.keyLight.castShadow = true;
-    this.keyLight.shadow.mapSize.set(2048, 2048);
+    const shadowMapSize = isMobileDevice() ? 512 : 2048;
+    this.keyLight.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     this.keyLight.shadow.camera.near = 0.5;
     this.keyLight.shadow.camera.far = 95;
     const d = 16;
@@ -705,7 +715,7 @@ export class LightingRig {
    * streetlights, garage lightbanks, and pavement!
    */
   captureSceneProbe(position = new THREE.Vector3(0, 0, 0), excludeObjects = []) {
-    if (!this.renderer || this.currentSceneId === 'outdoor_world') return;
+    if (!this.renderer || !this.cubeCamera || !this.cubeRenderTarget || this.currentSceneId === 'outdoor_world' || isMobileDevice()) return;
 
     const prevVis = excludeObjects.map((obj) => {
       const v = obj ? obj.visible : false;

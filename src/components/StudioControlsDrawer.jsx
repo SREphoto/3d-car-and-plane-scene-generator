@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
 import {
-  CloudSun,
-  Sun,
-  Cloud,
-  CloudDrizzle,
-  CloudLightning,
-  Snowflake,
-  Wind,
   Sliders,
   Video,
   Play,
@@ -14,7 +7,6 @@ import {
   Plus,
   Trash2,
   Sparkles,
-  Zap,
   RotateCw,
   Eye,
   Camera,
@@ -30,7 +22,6 @@ import {
   MousePointer2,
 } from 'lucide-react';
 import {
-  WEATHER_PRESETS,
   LIGHTING_PRESETS,
   SCENE_FILM_PRESETS,
   CAMERA_SHOTS,
@@ -39,15 +30,6 @@ import {
   CAR_PAINT_FINISHES,
 } from '../data/catalog';
 import { STUDIO_LOOK_PRESETS, STUDIO_FLOOR_FINISHES } from '../engine/ProceduralStages';
-
-const WEATHER_ICONS = {
-  sunny: Sun,
-  cloudy: Cloud,
-  drizzle: CloudDrizzle,
-  thunderstorm: CloudLightning,
-  snow: Snowflake,
-  blizzard: Wind,
-};
 
 export function StudioControlsDrawer({
   isOpen,
@@ -63,21 +45,6 @@ export function StudioControlsDrawer({
   onSelectLens,
   onChangeLensState,
   onJumpToScene,
-  // Weather & Time
-  weatherId,
-  onSelectWeather,
-  timeOfDay,
-  onChangeTimeOfDay,
-  autoTimeLapse,
-  onToggleTimeLapse,
-  snowAccumulation,
-  onChangeSnowAccumulation,
-  autoAccumulateSnow,
-  onToggleAutoSnow,
-  onClearSnow,
-  onTriggerLightning,
-  windSpeed,
-  onChangeWindSpeed,
   // Lighting & Dynamics
   lightingState,
   onChangeLightingState,
@@ -131,10 +98,6 @@ export function StudioControlsDrawer({
   };
 
   if (!isOpen) return null;
-
-  const hours = Math.floor(timeOfDay);
-  const minutes = Math.floor((timeOfDay - hours) * 60);
-  const timeFormatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 
   const activeScenePresets =
     activeSceneId && SCENE_FILM_PRESETS[activeSceneId]
@@ -217,7 +180,8 @@ export function StudioControlsDrawer({
         top: '62px',
         right: 0,
         bottom: 0,
-        width: '430px',
+        width: 'min(430px, 100vw)',
+        maxWidth: '100vw',
         background: 'rgba(7, 10, 18, 0.94)',
         backdropFilter: 'blur(24px)',
         borderLeft: '1px solid var(--border-subtle)',
@@ -317,26 +281,6 @@ export function StudioControlsDrawer({
           >
             <Move size={13} />
             <span>MOVE / DRIVE</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('weather')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              padding: '6px 9px',
-              background: activeTab === 'weather' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
-              border: `1px solid ${activeTab === 'weather' ? 'var(--accent-amber)' : 'transparent'}`,
-              borderRadius: 'var(--radius-sm)',
-              color: activeTab === 'weather' ? 'var(--accent-amber)' : 'var(--text-secondary)',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            <CloudSun size={13} />
-            <span>WEATHER</span>
           </button>
 
           <button
@@ -1835,232 +1779,6 @@ export function StudioControlsDrawer({
                     {underglowOn ? 'ON' : 'OFF'}
                   </button>
                 </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ================= TAB: WEATHER & 24H TIME-OF-DAY ================= */}
-        {activeTab === 'weather' && (
-          <>
-            <div>
-              <div
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  color: 'var(--text-muted)',
-                  marginBottom: '10px',
-                  letterSpacing: '0.5px',
-                }}
-              >
-                OUTDOOR WEATHER STATES
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                {WEATHER_PRESETS.map((w) => {
-                  const Icon = WEATHER_ICONS[w.id] || Sun;
-                  const isSelected = weatherId === w.id;
-                  return (
-                    <button
-                      key={w.id}
-                      onClick={() => onSelectWeather(w.id)}
-                      style={{
-                        padding: '10px 8px',
-                        background: isSelected ? 'rgba(245, 158, 11, 0.2)' : 'var(--bg-card)',
-                        border: `1px solid ${isSelected ? 'var(--accent-amber)' : 'var(--border-subtle)'}`,
-                        borderRadius: 'var(--radius-md)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '6px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Icon size={18} color={isSelected ? 'var(--accent-amber)' : 'var(--text-secondary)'} />
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                        }}
-                      >
-                        {w.name}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 24h Time-of-Day Slider */}
-            <div
-              style={{
-                background: 'var(--bg-card)',
-                padding: '14px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
-                  24-HOUR SOLAR ARC
-                </span>
-                <span
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '13px',
-                    color: 'var(--accent-amber)',
-                    fontWeight: 700,
-                  }}
-                >
-                  {timeFormatted}
-                </span>
-              </div>
-
-              <input
-                type="range"
-                min="0"
-                max="24"
-                step="0.05"
-                value={timeOfDay}
-                onChange={(e) => onChangeTimeOfDay(parseFloat(e.target.value))}
-              />
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  Continuous Time-Lapse
-                </span>
-                <button
-                  onClick={onToggleTimeLapse}
-                  style={{
-                    padding: '4px 10px',
-                    background: autoTimeLapse
-                      ? 'rgba(245, 158, 11, 0.2)'
-                      : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${autoTimeLapse ? 'var(--accent-amber)' : 'var(--border-subtle)'}`,
-                    borderRadius: '6px',
-                    color: autoTimeLapse ? 'var(--accent-amber)' : 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {autoTimeLapse ? 'ACTIVE' : 'PAUSED'}
-                </button>
-              </div>
-            </div>
-
-            {/* Snow Accumulation Slider */}
-            <div
-              style={{
-                background: 'var(--bg-card)',
-                padding: '14px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
-                  SNOW ACCUMULATION SHADER
-                </span>
-                <span
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '12px',
-                    color: 'var(--accent-cyan)',
-                    fontWeight: 700,
-                  }}
-                >
-                  {Math.round(snowAccumulation * 100)}%
-                </span>
-              </div>
-
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={snowAccumulation}
-                onChange={(e) => onChangeSnowAccumulation(parseFloat(e.target.value))}
-              />
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={onToggleAutoSnow}
-                  style={{
-                    flex: 1,
-                    padding: '6px 10px',
-                    background: autoAccumulateSnow
-                      ? 'rgba(56, 189, 248, 0.18)'
-                      : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${autoAccumulateSnow ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
-                    borderRadius: '6px',
-                    color: autoAccumulateSnow ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {autoAccumulateSnow ? 'Auto-Buildup ON' : 'Auto-Buildup OFF'}
-                </button>
-                <button
-                  onClick={onClearSnow}
-                  style={{
-                    padding: '6px 12px',
-                    background: 'rgba(244, 63, 94, 0.15)',
-                    border: '1px solid rgba(244, 63, 94, 0.35)',
-                    borderRadius: '6px',
-                    color: 'var(--accent-rose)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Melt / Clear
-                </button>
-              </div>
-            </div>
-
-            {/* Lightning Strike Action */}
-            <div
-              style={{
-                background: 'var(--bg-card)',
-                padding: '14px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
-                  THUNDERSTORM FX
-                </span>
-                <button
-                  onClick={onTriggerLightning}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Zap size={13} />
-                  <span>STRIKE LIGHTNING</span>
-                </button>
               </div>
             </div>
           </>

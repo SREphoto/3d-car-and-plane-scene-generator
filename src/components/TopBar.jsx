@@ -9,12 +9,6 @@ import {
   Sliders,
   Layers,
   Sparkles,
-  Sun,
-  Cloud,
-  CloudDrizzle,
-  CloudLightning,
-  Snowflake,
-  Wind,
   Square,
   Maximize2,
   Move,
@@ -26,15 +20,6 @@ import {
 import { ASPECT_RATIOS } from '../recorder/VideoExporter';
 import { CARS_CATALOG, PLANES_CATALOG, PARTS_CATALOG } from '../data/catalog';
 
-const WEATHER_ICONS = {
-  sunny: Sun,
-  cloudy: Cloud,
-  drizzle: CloudDrizzle,
-  thunderstorm: CloudLightning,
-  snow: Snowflake,
-  blizzard: Wind,
-};
-
 export function TopBar({
   mode,
   setMode,
@@ -42,8 +27,6 @@ export function TopBar({
   setAspectRatio,
   safeFrameVisible,
   setSafeFrameVisible,
-  activeWeather,
-  timeOfDay,
   beatSyncEnabled,
   setBeatSyncEnabled,
   isRecording,
@@ -64,12 +47,6 @@ export function TopBar({
   onSelectLens,
   onOpenOptics,
 }) {
-  const WeatherIcon = WEATHER_ICONS[activeWeather] || Sun;
-
-  const hours = Math.floor(timeOfDay);
-  const minutes = Math.floor((timeOfDay - hours) * 60);
-  const timeFormatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-
   return (
     <header
       style={{
@@ -86,10 +63,14 @@ export function TopBar({
         backdropFilter: 'blur(20px)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         zIndex: 40,
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
       }}
     >
       {/* Left: Brand + Catalog Toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div
             style={{
@@ -211,7 +192,7 @@ export function TopBar({
       </div>
 
       {/* Center: Vehicle Move / Drive Controls + Environment Info + Aspect Ratio */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
         {/* Vehicle Placement & Live Drive Segmented Control */}
         <div
           style={{
@@ -346,26 +327,6 @@ export function TopBar({
           </div>
         )}
 
-        {/* Environment Pill */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '7px',
-            padding: '4px 10px',
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.07)',
-            borderRadius: 'var(--radius-full)',
-            fontSize: '11px',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <WeatherIcon size={12} color="var(--accent-amber)" />
-          <span style={{ textTransform: 'capitalize', fontWeight: 500, color: '#e2e8f0' }}>{activeWeather}</span>
-          <span style={{ opacity: 0.3 }}>•</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: '#ffffff' }}>{timeFormatted}</span>
-        </div>
-
         {/* Aspect Ratio Selector */}
         <div
           style={{
@@ -423,7 +384,7 @@ export function TopBar({
       </div>
 
       {/* Right: Audio + Record + Studio Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
         {/* Beat Sync Toggle */}
         <button
           onClick={() => setBeatSyncEnabled(!beatSyncEnabled)}

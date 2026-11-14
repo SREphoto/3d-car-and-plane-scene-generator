@@ -8,7 +8,6 @@
  * 3. Box3 and Sphere bounds computation without NaN
  * 4. Ground alignment (Y = 0.000)
  * 5. CarMaterialEnhancer upgrade pipeline (MeshPhysicalMaterial, glass, paint, lights)
- * 6. WeatherSystem dynamic snow shader injection (onBeforeCompile hook)
  * 7. VehicleDynamics bounding calculations (wheel nodes, chassis pivot)
  * 8. Full memory disposal (geometries, materials, textures)
  */
@@ -18,7 +17,6 @@ import path from 'node:path';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CarMaterialEnhancer } from '../src/engine/CarMaterialEnhancer.js';
-import { attachSnowShaderToMaterial } from '../src/engine/WeatherSystem.js';
 
 // Polyfill minimal browser globals for Node.js image loading in Three.js
 globalThis.self = globalThis;
@@ -99,10 +97,6 @@ async function runPipelineTest() {
   console.log('======================================================================\n');
 
   const enhancer = new CarMaterialEnhancer();
-  const sharedUniforms = {
-    uSnowAmount: { value: 0.5 },
-    uWetness: { value: 0.8 },
-  };
 
   const results = [];
   let failCount = 0;
@@ -197,16 +191,6 @@ async function runPipelineTest() {
 
         // 5. CarMaterialEnhancer Pipeline Execution
         enhancer.enhance(rootGroup, mode, bounds);
-
-        // 6. WeatherSystem Snow Shader Injection
-        rootGroup.traverse((child) => {
-          if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            for (const m of mats) {
-              attachSnowShaderToMaterial(m, sharedUniforms);
-            }
-          }
-        });
 
         // 7. Raycasting & Frustum Sphere Sanity
         let totalGeomTriangles = 0;

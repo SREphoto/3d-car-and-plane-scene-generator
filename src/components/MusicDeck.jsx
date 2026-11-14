@@ -96,7 +96,7 @@ export function MusicDeck({
       {playlistDrawerOpen && (
         <div style={{
           pointerEvents: 'auto',
-          width: '560px',
+          width: 'min(560px, calc(100vw - 32px))',
           maxHeight: '340px',
           background: 'rgba(10, 14, 23, 0.95)',
           backdropFilter: 'blur(20px)',
@@ -327,11 +327,12 @@ export function MusicDeck({
           ref={canvasRef}
           width={90}
           height={32}
+          className="music-deck-fft"
           style={{ width: '90px', height: '32px', flexShrink: 0 }}
         />
 
         {/* Volume Slider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '90px' }}>
+        <div className="music-deck-volume" style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '90px', flexShrink: 0 }}>
           {volume === 0 ? <VolumeX size={15} color="var(--text-muted)" /> : <Volume2 size={15} color="var(--text-secondary)" />}
           <input
             type="range"

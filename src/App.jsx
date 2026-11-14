@@ -3,6 +3,7 @@ import { SceneManager } from './engine/SceneManager';
 import { STUDIO_LOOK_PRESETS } from './engine/ProceduralStages';
 import { MusicEngine } from './audio/MusicEngine';
 import { VideoExporter, ASPECT_RATIOS } from './recorder/VideoExporter';
+import { isMobileDevice } from './engine/device';
 import {
   CARS_CATALOG,
   PLANES_CATALOG,
@@ -32,10 +33,11 @@ export default function App() {
   const [loadingState, setLoadingState] = useState({ loading: false, progress: 0, label: '' });
 
   // Drawers & Overlays
-  const [leftOpen, setLeftOpen] = useState(true);
+  const [leftOpen, setLeftOpen] = useState(!isMobileDevice());
   const [rightOpen, setRightOpen] = useState(false);
   const [studioControlTab, setStudioControlTab] = useState('lighting');
-  const [musicOpen, setMusicOpen] = useState(true);
+  const [musicOpen, setMusicOpen] = useState(!isMobileDevice());
+  const [contextLost, setContextLost] = useState(false);
 
   // Pro Cyclorama Lighting Studio Interactive Rig State
   const [proStudioState, setProStudioState] = useState({
@@ -61,14 +63,6 @@ export default function App() {
   // Aspect Ratio & Safe Frame
   const [aspectRatio, setAspectRatio] = useState('16:9');
   const [safeFrameVisible, setSafeFrameVisible] = useState(true);
-
-  // Weather & 24h Time-of-Day
-  const [weatherId, setWeatherId] = useState('sunny');
-  const [timeOfDay, setTimeOfDay] = useState(16.5); // 16:30
-  const [autoTimeLapse, setAutoTimeLapse] = useState(false);
-  const [snowAccumulation, setSnowAccumulation] = useState(0.0);
-  const [autoAccumulateSnow, setAutoAccumulateSnow] = useState(true);
-  const [windSpeed, setWindSpeed] = useState(0.35);
 
   // Lighting & Dynamics
   const [lightingState, setLightingState] = useState({
@@ -158,10 +152,6 @@ export default function App() {
         setActiveShotId(shotId);
         setIsPlayingSequence(isSeq);
       },
-      onOutdoorTick: ({ timeOfDay: tod, snowAccumulation: sa }) => {
-        setTimeOfDay(tod);
-        setSnowAccumulation(sa);
-      },
       onAudioFrame: ({ bars }) => {
         setAudioBars(bars);
       },
@@ -176,6 +166,12 @@ export default function App() {
       },
       onDofChange: (nextDof) => {
         setLensState((prev) => ({ ...prev, ...nextDof }));
+      },
+      onContextLost: () => {
+        setContextLost(true);
+      },
+      onContextRestored: () => {
+        setContextLost(false);
       },
     });
     sm.musicEngine = music;
@@ -195,7 +191,7 @@ export default function App() {
       handleNextTrack();
     };
 
-    // Load initial 3D car and outdoor world
+    // Load initial 3D car and default studio scene
     sm.loadSubject(CARS_CATALOG[0], 'cars');
     sm.setScene(SCENES_CATALOG[0]);
 
@@ -232,7 +228,6 @@ export default function App() {
     let targetScene = activeScene;
     if (!activeScene?.modes?.includes(newMode)) {
       targetScene =
-        (newMode === 'planes' && SCENES_CATALOG.find((s) => s.id === 'outdoor_world')) ||
         SCENES_CATALOG.find((s) => s.modes?.includes(newMode)) ||
         activeScene;
       setActiveScene(targetScene);
@@ -261,67 +256,6 @@ export default function App() {
     setActiveScene(scene);
     if (sceneManagerRef.current) {
       sceneManagerRef.current.setScene(scene);
-    }
-  };
-
-  // Weather Controls
-  const handleSelectWeather = (wId) => {
-    setWeatherId(wId);
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.weatherId = wId;
-    }
-  };
-
-  const handleChangeTimeOfDay = (val) => {
-    setTimeOfDay(val);
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.timeOfDay = val;
-    }
-  };
-
-  const handleToggleTimeLapse = () => {
-    const next = !autoTimeLapse;
-    setAutoTimeLapse(next);
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.autoTimeLapse = next;
-    }
-  };
-
-  const handleChangeSnowAccumulation = (val) => {
-    setSnowAccumulation(val);
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.snowAccumulation = val;
-    }
-  };
-
-  const handleToggleAutoSnow = () => {
-    const next = !autoAccumulateSnow;
-    setAutoAccumulateSnow(next);
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.autoAccumulateSnow = next;
-    }
-  };
-
-  const handleClearSnow = () => {
-    setSnowAccumulation(0);
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.snowAccumulation = 0;
-    }
-  };
-
-  const handleTriggerLightning = () => {
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.triggerLightningStrike();
-      if (musicEngineRef.current) {
-        musicEngineRef.current.playThunderRumble();
-      }
-    }
-  };
-
-  const handleChangeWindSpeed = (val) => {
-    setWindSpeed(val);
-    if (sceneManagerRef.current) {
-      sceneManagerRef.current.weatherSystem.windSpeed = val;
     }
   };
 
@@ -614,17 +548,60 @@ export default function App() {
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       {/* 3D WebGL Canvas Viewport */}
-      <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+      <div style={{ position: 'absolute', inset: 0, zIndex: 10, touchAction: 'none' }}>
         <canvas
           ref={canvasRef}
           style={{
             width: '100%',
             height: '100%',
             display: 'block',
+            touchAction: 'none',
             cursor: lensState.clickFocusArmed ? 'crosshair' : 'default',
           }}
         />
       </div>
+
+      {/* WebGL Context Lost Banner */}
+      {contextLost && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 100,
+            background: 'rgba(15, 23, 42, 0.95)',
+            border: '1px solid #ef4444',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px 24px',
+            textAlign: 'center',
+            boxShadow: '0 12px 36px rgba(0,0,0,0.8)',
+            maxWidth: '90vw',
+          }}
+        >
+          <div style={{ color: '#ef4444', fontWeight: 700, fontSize: '15px', marginBottom: '8px' }}>
+            WebGL Context Lost
+          </div>
+          <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '14px' }}>
+            Mobile GPU memory reclaimed. Restoring 3D graphics...
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Reload Studio
+          </button>
+        </div>
+      )}
 
       {/* Click-to-Focus Armed HUD Pill */}
       {!isRecording && lensState.clickFocusArmed && (
@@ -801,8 +778,6 @@ export default function App() {
         setAspectRatio={setAspectRatio}
         safeFrameVisible={safeFrameVisible}
         setSafeFrameVisible={setSafeFrameVisible}
-        activeWeather={weatherId}
-        timeOfDay={timeOfDay}
         beatSyncEnabled={beatSyncEnabled}
         setBeatSyncEnabled={setBeatSyncEnabled}
         isRecording={isRecording}
@@ -836,7 +811,7 @@ export default function App() {
         onSelectScene={handleSelectScene}
       />
 
-      {/* Right Drawer: Studio Controls (Weather, Lighting, Lenses/DoF, Camera Director) */}
+      {/* Right Drawer: Studio Controls (Lighting, Lenses/DoF, Camera Director) */}
       <StudioControlsDrawer
         isOpen={rightOpen}
         onClose={() => setRightOpen(false)}
@@ -851,21 +826,6 @@ export default function App() {
         onSelectLens={handleSelectLens}
         onChangeLensState={handleChangeLensState}
         onJumpToScene={handleJumpToScene}
-        // Weather
-        weatherId={weatherId}
-        onSelectWeather={handleSelectWeather}
-        timeOfDay={timeOfDay}
-        onChangeTimeOfDay={handleChangeTimeOfDay}
-        autoTimeLapse={autoTimeLapse}
-        onToggleTimeLapse={handleToggleTimeLapse}
-        snowAccumulation={snowAccumulation}
-        onChangeSnowAccumulation={handleChangeSnowAccumulation}
-        autoAccumulateSnow={autoAccumulateSnow}
-        onToggleAutoSnow={handleToggleAutoSnow}
-        onClearSnow={handleClearSnow}
-        onTriggerLightning={handleTriggerLightning}
-        windSpeed={windSpeed}
-        onChangeWindSpeed={handleChangeWindSpeed}
         // Lighting & Dynamics
         lightingState={lightingState}
         onChangeLightingState={handleChangeLightingState}

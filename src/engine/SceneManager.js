@@ -3,13 +3,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { WeatherSystem } from './WeatherSystem.js';
 import { LightingRig } from './LightingRig.js';
 import { VehicleDynamics } from './VehicleDynamics.js';
 import { CameraDirector } from './CameraDirector.js';
 import { CarMaterialEnhancer } from './CarMaterialEnhancer.js';
 import { PostProcessingPipeline } from './PostProcessingPipeline.js';
 import { VehicleController } from './VehicleController.js';
+import { isMobileDevice, getOptimalPixelRatio } from './device.js';
 import {
   STUDIO_LOOK_PRESETS,
   buildProLightingStudioStage,
@@ -44,18 +44,42 @@ export class SceneManager {
     this.canvas = canvas;
     this.callbacks = callbacks;
 
+    this.isMobile = isMobileDevice();
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
-      powerPreference: 'high-performance',
-      preserveDrawingBuffer: true,
+      // Mobile: skip default-framebuffer MSAA + preserved buffer (composer renders offscreen and
+      // VideoExporter samples the canvas synchronously right after render in the same frame).
+      antialias: !this.isMobile,
+      powerPreference: this.isMobile ? 'default' : 'high-performance',
+      preserveDrawingBuffer: !this.isMobile,
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(getOptimalPixelRatio(2.0, 1.25));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = this.isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.04;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    this.isContextLost = false;
+    this._onContextLost = (event) => {
+      event.preventDefault();
+      console.warn('[SceneManager] WebGL context lost.');
+      this.isContextLost = true;
+      if (this.callbacks.onContextLost) {
+        this.callbacks.onContextLost();
+      }
+    };
+    this._onContextRestored = () => {
+      console.info('[SceneManager] WebGL context restored. Rebuilding pipeline & state.');
+      this.isContextLost = false;
+      this.resize();
+      this._animate();
+      if (this.callbacks.onContextRestored) {
+        this.callbacks.onContextRestored();
+      }
+    };
+    this.canvas.addEventListener('webglcontextlost', this._onContextLost, false);
+    this.canvas.addEventListener('webglcontextrestored', this._onContextRestored, false);
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#010204');
@@ -84,7 +108,6 @@ export class SceneManager {
     this.scene.add(this.locationHolder);
 
     this.lightingRig = new LightingRig(this.scene, this.renderer);
-    this.weatherSystem = new WeatherSystem(this.scene);
     this.vehicleDynamics = new VehicleDynamics(this.scene);
     this.cameraDirector = new CameraDirector(this.camera, this.controls);
     this.cameraDirector.bindSubjectHolder(this.subjectHolder);
@@ -195,8 +218,83 @@ export class SceneManager {
     this.camera.updateProjectionMatrix();
   }
 
+  _getMaxAniso() {
+    const hw = this.renderer.capabilities.getMaxAnisotropy();
+    return this.isMobile ? Math.min(2, hw) : hw;
+  }
+
+  /**
+   * Mobile GPU memory guard: GLB assets often embed 4K/8K textures (64-256 MB each once decoded).
+   * Downscale every texture image larger than MOBILE_MAX_TEX on the CPU before first GPU upload.
+   */
+  _optimizeTexturesForMobile(root) {
+    if (!this.isMobile || !root) return;
+    const MOBILE_MAX_TEX = 1024;
+    const seen = new Set();
+    root.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const mat of mats) {
+        if (!mat) continue;
+        for (const key of Object.keys(mat)) {
+          const tex = mat[key];
+          if (!tex || !tex.isTexture || seen.has(tex)) continue;
+          seen.add(tex);
+          tex.anisotropy = Math.min(tex.anisotropy || 1, 2);
+          const img = tex.image;
+          const iw = img && (img.width || img.videoWidth);
+          const ih = img && (img.height || img.videoHeight);
+          if (!iw || !ih || Math.max(iw, ih) <= MOBILE_MAX_TEX) continue;
+          if (tex.isDataTexture || tex.isCompressedTexture) continue;
+          try {
+            const s = MOBILE_MAX_TEX / Math.max(iw, ih);
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(iw * s));
+            canvas.height = Math.max(1, Math.round(ih * s));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            if (typeof img.close === 'function') img.close(); // free ImageBitmap memory
+            tex.image = canvas;
+            tex.needsUpdate = true;
+          } catch (err) {
+            console.warn('[SceneManager] Mobile texture downscale skipped:', err);
+          }
+        }
+      }
+    });
+  }
+
+  _disposeObjectTree(root) {
+    if (!root) return;
+    root.traverse((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (!child.material) return;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const mat of mats) {
+        if (!mat) continue;
+        for (const key of Object.keys(mat)) {
+          const v = mat[key];
+          if (v && v.isTexture) v.dispose();
+        }
+        mat.dispose();
+      }
+    });
+  }
+
+  /** On mobile keep only the active subject/location resident in memory. */
+  _evictMobileCache(cache, keepId, getRoot) {
+    if (!this.isMobile) return;
+    for (const [id, entry] of cache) {
+      if (id === keepId) continue;
+      const root = getRoot(entry);
+      if (root?.parent) root.parent.remove(root);
+      this._disposeObjectTree(root);
+      cache.delete(id);
+    }
+  }
+
   refreshSceneReflectionProbe(pos = this.subjectHolder.position) {
-    if (!this.lightingRig) return;
+    if (isMobileDevice() || !this.lightingRig) return;
     const shouldCapture =
       (this.activeSceneItem && this.activeSceneItem.type === 'glb') ||
       LIVE_PROBE_PROCEDURAL_SCENES.has(this.activeSceneId);
@@ -246,6 +344,7 @@ export class SceneManager {
         });
 
         const rawModel = gltf.scene;
+        this._optimizeTexturesForMobile(rawModel);
 
         // Strip stray backdrop/shadow-catcher floor planes, collision hulls, or hitboxes baked into Sketchfab exports
         rawModel.traverse((child) => {
@@ -363,11 +462,12 @@ export class SceneManager {
         };
 
         this.enhancer.enhance(rootGroup, mode, bounds);
-        this.weatherSystem.applySnowShaderToRoot(rootGroup);
         this.subjectCache.set(item.id, { rootGroup, bounds });
       }
 
       if (token !== this.loadToken) return;
+
+      this._evictMobileCache(this.subjectCache, item.id, (e) => e.rootGroup);
 
       while (this.subjectHolder.children.length > 0) {
         this.subjectHolder.remove(this.subjectHolder.children[0]);
@@ -408,7 +508,7 @@ export class SceneManager {
   }
 
   /**
-   * Switches between 3D GLB Cities/Garages, Outdoor Weather World, and Procedural Cinema Stages
+   * Switches between 3D GLB Cities/Garages, and Procedural Cinema Stages
    */
   async setScene(sceneItem) {
     this.activeSceneId = sceneItem.id;
@@ -420,8 +520,6 @@ export class SceneManager {
       this.locationHolder.remove(this.locationHolder.children[0]);
     }
 
-    const isOutdoor = sceneItem.type === 'outdoor';
-    this.weatherSystem.setOutdoorVisible(isOutdoor);
     const appliedProfile = this.lightingRig.setActiveProceduralScene(sceneItem.id);
     this.activeSceneShadowOpacity = appliedProfile?.shadowCatcherOpacity ?? 0.42;
 
@@ -468,6 +566,7 @@ export class SceneManager {
           });
 
           const rawLoc = gltf.scene;
+          this._optimizeTexturesForMobile(rawLoc);
 
           if (sceneItem.id === 'wind_tunnel') {
             rawLoc.traverse((child) => {
@@ -846,6 +945,7 @@ export class SceneManager {
         }
 
         if (sToken === this.sceneLoadToken && this.activeSceneId === sceneItem.id) {
+          this._evictMobileCache(this.locationCache, sceneItem.id, (g) => g);
           this.locationHolder.add(locGroup);
           locGroup.updateMatrixWorld(true);
 
@@ -1094,7 +1194,7 @@ export class SceneManager {
   }
 
   _animate() {
-    if (this.disposed) return;
+    if (this.disposed || this.isContextLost) return;
     requestAnimationFrame(() => this._animate());
 
     const dt = Math.min(0.05, this.clock.getDelta());
@@ -1137,26 +1237,6 @@ export class SceneManager {
     // 3. Update Live WASD Vehicle Driving / Flying
     this.vehicleController.update(dt);
 
-    // 4. Update Outdoor Weather & 24h Time-of-Day
-    const isOutdoor = this.activeSceneId === 'outdoor_world';
-    const prevLightning = this.weatherSystem.lightningFlash;
-    this.weatherSystem.update(dt, this.elapsed, this.lightingRig, isOutdoor);
-    if (
-      isOutdoor &&
-      this.weatherSystem.lightningFlash > 1.5 &&
-      prevLightning <= 1.5 &&
-      this.musicEngine
-    ) {
-      this.musicEngine.playThunderRumble();
-    }
-
-    if (isOutdoor && this.callbacks.onOutdoorTick) {
-      this.callbacks.onOutdoorTick({
-        timeOfDay: this.weatherSystem.timeOfDay,
-        snowAccumulation: this.weatherSystem.snowAccumulation,
-      });
-    }
-
     // 5. Update Studio Lighting Rig
     this.lightingRig.update(dt, this.elapsed, this.vehicleDynamics.state.wheelSpin);
 
@@ -1164,7 +1244,7 @@ export class SceneManager {
     this.vehicleDynamics.update(
       dt,
       this.elapsed,
-      this.weatherSystem.roadTexture,
+      null,
       this.activeSceneId,
       this.vehicleController.speed
     );
@@ -1197,6 +1277,12 @@ export class SceneManager {
     if (this.canvas) {
       this.canvas.removeEventListener('pointerdown', this._onFocusPointerDown);
       this.canvas.removeEventListener('pointerup', this._onFocusPointerUp);
+      if (this._onContextLost) {
+        this.canvas.removeEventListener('webglcontextlost', this._onContextLost);
+      }
+      if (this._onContextRestored) {
+        this.canvas.removeEventListener('webglcontextrestored', this._onContextRestored);
+      }
     }
     this.pipeline.dispose();
     this.vehicleController.dispose();
