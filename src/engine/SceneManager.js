@@ -15,6 +15,8 @@ import {
   buildProLightingStudioStage,
   buildWarehouseCourtyardStage,
   buildCityBokehStreetStage,
+  buildCityGpCircuitStage,
+  buildBalloonValleyCircuitStage,
 } from './ProceduralStages.js';
 
 const NIGHT_PHOTOGRAMMETRY_SCENES = new Set(['la_night_city']);
@@ -31,6 +33,8 @@ const LIVE_PROBE_PROCEDURAL_SCENES = new Set([
   'warehouse_courtyard_day',
   'city_bokeh_street_day',
   'wet_night_bokeh_street',
+  'city_gp_circuit',
+  'balloon_valley_circuit',
 ]);
 const CIRCUIT_TRACK_SCENES = new Set(['monaco_circuit', 'marina_bay_circuit']);
 
@@ -160,6 +164,7 @@ export class SceneManager {
       turntableSpeed: 0.25,
     };
     this.activeSubjectBounds = { w: 2.0, h: 1.35, d: 4.75 };
+    this._activeProceduralStage = null;
     this.lensState = {
       lensId: 'studio_wide',
       focalLengthMm: null,
@@ -170,10 +175,17 @@ export class SceneManager {
       manualFocusDistance: 5.5,
       bokehBoost: 1.55,
       currentFocusDistance: 5.5,
+      focusTarget: 'center', // 'center' | 'front' | 'cockpit' | 'rear' | 'wheels'
+      focusPullerEnabled: true,
+      focusPullerStyle: 'cine_smooth', // 'cine_smooth' | 'snappy' | 'rack_anticipate'
+      focusPullerNote: 'Holding vehicle center with smooth cine damping',
+      dofNear: 4.2,
+      dofFar: 7.8,
     };
     this._focusRaycaster = new THREE.Raycaster();
     this._focusNdc = new THREE.Vector2();
     this._focusCenterVec = new THREE.Vector3();
+    this._smoothedFocusDist = 5.5;
     this._focusDownPt = { x: 0, y: 0, valid: false };
 
     this._onFocusPointerDown = (e) => {
@@ -972,7 +984,8 @@ export class SceneManager {
         }
       }
     } else {
-      // High-DPI Procedural Stages (Pro Cyclorama Studio, Day Brick Warehouse, Day/Wet-Night Bokeh Street)
+      this._activeProceduralStage = null;
+      // High-DPI Procedural Stages (Pro Cyclorama Studio, Day Brick Warehouse, Day/Wet-Night Bokeh Street, GP Circuits)
       if (sceneItem.id === 'pro_lighting_studio') {
         if (!this.proStudioInstance) {
           this.proStudioInstance = buildProLightingStudioStage(this.renderer, this.proStudioState);
@@ -985,12 +998,18 @@ export class SceneManager {
       } else if (
         sceneItem.id === 'warehouse_courtyard_day' ||
         sceneItem.id === 'city_bokeh_street_day' ||
-        sceneItem.id === 'wet_night_bokeh_street'
+        sceneItem.id === 'wet_night_bokeh_street' ||
+        sceneItem.id === 'city_gp_circuit' ||
+        sceneItem.id === 'balloon_valley_circuit'
       ) {
         let stageObj = this.proceduralStageCache.get(sceneItem.id);
         if (!stageObj) {
           if (sceneItem.id === 'warehouse_courtyard_day') {
             stageObj = buildWarehouseCourtyardStage(this.renderer);
+          } else if (sceneItem.id === 'city_gp_circuit') {
+            stageObj = buildCityGpCircuitStage(this.renderer);
+          } else if (sceneItem.id === 'balloon_valley_circuit') {
+            stageObj = buildBalloonValleyCircuitStage(this.renderer);
           } else {
             stageObj = buildCityBokehStreetStage(this.renderer, {
               isNight: sceneItem.id === 'wet_night_bokeh_street',
@@ -998,6 +1017,7 @@ export class SceneManager {
           }
           this.proceduralStageCache.set(sceneItem.id, stageObj);
         }
+        this._activeProceduralStage = stageObj;
         this.locationHolder.add(stageObj.group);
         stageObj.group.updateMatrixWorld(true);
       }
@@ -1079,17 +1099,97 @@ export class SceneManager {
     return { ...this.lensState };
   }
 
-  _computeAutoFocusDistance() {
+  _computeFocusTargetWorldVec() {
     const b = this.activeSubjectBounds || { w: 2.0, h: 1.35, d: 4.75 };
-    this._focusCenterVec.set(
-      this.subjectHolder.position.x,
-      this.subjectHolder.position.y + b.h * 0.42,
-      this.subjectHolder.position.z
-    );
-    const centerDist = this.camera.position.distanceTo(this._focusCenterVec);
-    // Focus slightly forward toward the camera-facing bodywork/headlight/badge so front 3/4 hero details stay tack-sharp
-    const frontBias = Math.min(Math.max(b.d * 0.16, 0.25), 1.35);
-    return Math.max(0.45, centerDist - frontBias);
+    const target = this.lensState.focusTarget || 'center';
+    let lx = 0;
+    let ly = b.h * 0.42;
+    let lz = 0;
+    if (target === 'front') {
+      ly = b.h * 0.36;
+      lz = -b.d * 0.42;
+    } else if (target === 'cockpit') {
+      ly = b.h * 0.68;
+      lz = -b.d * 0.08;
+    } else if (target === 'rear') {
+      ly = b.h * 0.40;
+      lz = b.d * 0.42;
+    } else if (target === 'wheels') {
+      lx = b.w * 0.44;
+      ly = b.h * 0.22;
+      lz = -b.d * 0.28;
+    }
+    const yaw = this.subjectHolder.rotation.y;
+    const cosY = Math.cos(yaw);
+    const sinY = Math.sin(yaw);
+    const wx = this.subjectHolder.position.x + lx * cosY + lz * sinY;
+    const wz = this.subjectHolder.position.z - lx * sinY + lz * cosY;
+    const bobY = this.vehicleDynamics?.subjectRoot ? this.vehicleDynamics.subjectRoot.position.y : 0;
+    this._focusCenterVec.set(wx, this.subjectHolder.position.y + bobY + ly, wz);
+    return this._focusCenterVec;
+  }
+
+  _computeAutoFocusDistance(dt = 0.016) {
+    const worldPt = this._computeFocusTargetWorldVec();
+    const rawDist = Math.max(0.45, this.camera.position.distanceTo(worldPt));
+    const b = this.activeSubjectBounds || { w: 2.0, h: 1.35, d: 4.75 };
+    const target = this.lensState.focusTarget || 'center';
+    const frontBias = target === 'center' ? Math.min(Math.max(b.d * 0.14, 0.2), 1.1) : 0;
+    const desiredDist = Math.max(0.45, rawDist - frontBias);
+
+    // Shot-aware Smart Focus Puller damping
+    const shotId = this.cameraDirector?.activeShotId || 'free_orbit';
+    const style = this.lensState.focusPullerStyle || 'cine_smooth';
+    const focalMm = this.lensState.focalLengthMm || 35;
+    let rate = 8.0;
+    let note = 'Tracking subject with balanced cine follow-focus';
+
+    if (style === 'snappy') {
+      rate = 22.0;
+      note = `Snappy AF locked on ${target} (${shotId.replace(/_/g, ' ')})`;
+    } else if (shotId === 'vertigo_dolly_zoom') {
+      rate = 18.0;
+      note = `Vertigo Dolly Zoom: compensating focal rack to hold ${target} sharp`;
+    } else if (shotId === 'flyby' || shotId === 'chase_low') {
+      rate = 16.0;
+      note = `High-speed ${shotId.replace(/_/g, ' ')}: fast predictive pull on ${target}`;
+    } else if (shotId === 'crane_reveal' || shotId === 'orbit_360') {
+      rate = 6.5;
+      note = `${shotId.replace(/_/g, ' ')}: smooth cine-motor rack on ${target}`;
+    } else if (focalMm >= 85) {
+      rate = 12.0;
+      note = `${focalMm}mm telephoto shallow-DoF guard on ${target}`;
+    }
+
+    if (this.lensState.focusPullerEnabled !== false) {
+      this._smoothedFocusDist = THREE.MathUtils.lerp(
+        this._smoothedFocusDist || desiredDist,
+        desiredDist,
+        Math.min(1, Math.max(0.05, dt * rate))
+      );
+    } else {
+      this._smoothedFocusDist = desiredDist;
+    }
+
+    // Physical DoF near/far calculation (35mm full-frame CoC = 0.03mm)
+    const fM = focalMm / 1000;
+    const N = Math.max(1.0, Number(this.lensState.fStop) || 2.8);
+    const cM = 0.00003;
+    const H = (fM * fM) / (N * cM) + fM;
+    const s = this._smoothedFocusDist;
+    const dofNear = (s * (H - fM)) / (H + s - 2 * fM);
+    const denomFar = H - s;
+    const dofFar = denomFar > 0.01 ? (s * (H - fM)) / denomFar : 999;
+
+    this.lensState.dofNear = Number(Math.max(0.2, dofNear).toFixed(2));
+    this.lensState.dofFar = Number(Math.min(999, dofFar).toFixed(2));
+    this.lensState.focusPullerNote = note;
+
+    return this._smoothedFocusDist;
+  }
+
+  setAutopilot(enabled, pattern = null) {
+    this.vehicleController.setAutopilot(enabled, pattern);
   }
 
   pickFocusAtClientPoint(clientX, clientY) {
@@ -1217,15 +1317,19 @@ export class SceneManager {
       }
     }
 
-    // 2. Rotate Wind Tunnel Fan & Pro Cyclorama Motorized Turntable
+    // 2. Rotate Wind Tunnel Fan, Balloon Valley Balloons & Pro Cyclorama Motorized Turntable
     if (this.activeSceneId === 'wind_tunnel' && this.windTunnelFan) {
       this.windTunnelFan.rotateX(-dt * 22.0);
+    }
+    if (this._activeProceduralStage?.update) {
+      this._activeProceduralStage.update(this.elapsed);
     }
     if (
       this.activeSceneId === 'pro_lighting_studio' &&
       this.proStudioState.turntableEnabled &&
       this.proStudioState.turntableSpeed > 0 &&
-      this.vehicleController.mode !== 'drive'
+      this.vehicleController.mode !== 'drive' &&
+      !this.vehicleController.autopilotEnabled
     ) {
       this.subjectHolder.rotation.y =
         (this.subjectHolder.rotation.y + dt * this.proStudioState.turntableSpeed) % (Math.PI * 2);
@@ -1234,8 +1338,18 @@ export class SceneManager {
       }
     }
 
-    // 3. Update Live WASD Vehicle Driving / Flying
+    // 3. Update Live WASD / Autopilot Vehicle Driving & Flying
     this.vehicleController.update(dt);
+
+    // 4. Hide ground shadows when there is no ground (cloud_deck or airborne plane)
+    const isPlaneAirborne =
+      this.activeMode === 'planes' &&
+      (this.activeSceneId === 'cloud_deck' ||
+        this.subjectHolder.position.y > 0.25 ||
+        Boolean(this.vehicleDynamics?.state?.planeLandingGearRetracted) ||
+        Boolean(this.vehicleController?.autopilotEnabled));
+    const showGroundShadows = this.activeSceneId !== 'cloud_deck' && !isPlaneAirborne;
+    this.enhancer.setGroundShadowsVisible(showGroundShadows, 0.34);
 
     // 5. Update Studio Lighting Rig
     this.lightingRig.update(dt, this.elapsed, this.vehicleDynamics.state.wheelSpin);
@@ -1255,11 +1369,16 @@ export class SceneManager {
       : 0;
     this.cameraDirector.update(dt, subjectBobY);
 
-    // 7b. Real-Time Subject-Tracking Auto-Focus for Optical Bokeh Lens
+    // 7b. Real-Time Subject-Tracking Smart Focus Puller for Optical Bokeh Lens
     if (this.lensState.dofEnabled && this.lensState.focusMode === 'auto') {
-      const autoDist = this._computeAutoFocusDistance();
-      this.lensState.currentFocusDistance = Number(autoDist.toFixed(2));
+      const autoDist = this._computeAutoFocusDistance(dt);
+      const rounded = Number(autoDist.toFixed(2));
+      const changed = Math.abs(rounded - (this.lensState.currentFocusDistance || 0)) >= 0.05;
+      this.lensState.currentFocusDistance = rounded;
       this.pipeline.setDofConfig({ focusDistance: autoDist });
+      if (changed && this.callbacks.onDofChange) {
+        this.callbacks.onDofChange({ ...this.lensState });
+      }
     }
 
     // 8. Render with AAA Post-Processing Pipeline (Linear-HDR Bokeh -> Bloom -> ACES -> Film Grade)

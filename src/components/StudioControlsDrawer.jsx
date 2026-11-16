@@ -73,6 +73,10 @@ export function StudioControlsDrawer({
   alignToSlope = false,
   onToggleAlignToSlope,
   onResetVehiclePose,
+  autopilotEnabled = false,
+  autopilotPattern = 'circuit',
+  onToggleAutopilot,
+  onChangeAutopilotPattern,
   // Post-FX
   postFx = { bloom: 0.16, vignette: 0.3, contrast: 1.08, blackLevel: 0.01 },
   onChangePostFx,
@@ -744,45 +748,298 @@ export function StudioControlsDrawer({
                   </div>
                 </div>
 
-                {/* Individual Studio Fixtures */}
+                {/* Individual Studio Fixtures + Positioning & Accessories (Barn Doors / Honeycomb) */}
                 {[
-                  { label: 'Overhead Softbox Scrim', intKey: 'overheadIntensity', colKey: 'overheadColor', max: 4.0 },
-                  { label: 'Left Strip Rim Bank', intKey: 'leftRimIntensity', colKey: 'leftRimColor', max: 4.0 },
-                  { label: 'Right Strip Rim Bank', intKey: 'rightRimIntensity', colKey: 'rightRimColor', max: 4.0 },
-                  { label: 'Macro Ring Light', intKey: 'ringLightIntensity', colKey: 'ringLightColor', max: 4.0 },
-                  { label: 'Venetian Blind Gobo', intKey: 'goboIntensity', colKey: 'goboColor', max: 5.0 },
-                ].map((fx) => (
-                  <div key={fx.intKey} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#e2e8f0' }}>
-                      <span>{fx.label}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                          type="color"
-                          value={proStudioState[fx.colKey] || '#ffffff'}
-                          onChange={(e) =>
-                            onChangeProStudioState &&
-                            onChangeProStudioState({ [fx.colKey]: e.target.value })
-                          }
-                          style={{ width: '22px', height: '18px', border: 'none', background: 'transparent', cursor: 'pointer' }}
-                        />
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', width: '34px', textAlign: 'right' }}>
-                          {Number(proStudioState[fx.intKey] ?? 0).toFixed(2)}
-                        </span>
+                  { label: 'Overhead Softbox Scrim', intKey: 'overheadIntensity', colKey: 'overheadColor', posKey: 'overheadPos', accKey: 'overheadAccessory', defPos: { x: 0, y: 3.85, z: -0.2 }, max: 4.0, yMin: 2.2, yMax: 7.5 },
+                  { label: 'Left Strip Rim Bank', intKey: 'leftRimIntensity', colKey: 'leftRimColor', posKey: 'leftRimPos', accKey: 'leftRimAccessory', defPos: { x: -4.55, y: 1.75, z: -0.5 }, max: 4.0, yMin: 0.6, yMax: 6.0 },
+                  { label: 'Right Strip Rim Bank', intKey: 'rightRimIntensity', colKey: 'rightRimColor', posKey: 'rightRimPos', accKey: 'rightRimAccessory', defPos: { x: 4.55, y: 1.75, z: -0.5 }, max: 4.0, yMin: 0.6, yMax: 6.0 },
+                  { label: 'Macro Ring Light', intKey: 'ringLightIntensity', colKey: 'ringLightColor', posKey: 'ringPos', accKey: 'ringAccessory', defPos: { x: -2.55, y: 1.58, z: -4.85 }, max: 4.0, yMin: 0.5, yMax: 6.0 },
+                  { label: 'Venetian Blind Gobo', intKey: 'goboIntensity', colKey: 'goboColor', posKey: null, accKey: null, defPos: null, max: 5.0 },
+                ].map((fx) => {
+                  const posVal = fx.posKey ? (proStudioState[fx.posKey] || fx.defPos) : null;
+                  const accVal = fx.accKey ? (proStudioState[fx.accKey] || 'none') : null;
+                  return (
+                    <div key={fx.intKey} style={{ display: 'flex', flexDirection: 'column', gap: '5px', padding: '7px 8px', background: 'rgba(15, 23, 42, 0.45)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#e2e8f0' }}>
+                        <span style={{ fontWeight: 700 }}>{fx.label}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input
+                            type="color"
+                            value={proStudioState[fx.colKey] || '#ffffff'}
+                            onChange={(e) =>
+                              onChangeProStudioState &&
+                              onChangeProStudioState({ [fx.colKey]: e.target.value })
+                            }
+                            style={{ width: '22px', height: '18px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', width: '34px', textAlign: 'right' }}>
+                            {Number(proStudioState[fx.intKey] ?? 0).toFixed(2)}
+                          </span>
+                        </div>
                       </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={fx.max}
+                        step="0.05"
+                        value={proStudioState[fx.intKey] ?? 0}
+                        onChange={(e) =>
+                          onChangeProStudioState &&
+                          onChangeProStudioState({ [fx.intKey]: parseFloat(e.target.value) })
+                        }
+                      />
+                      {fx.posKey && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginTop: '2px' }}>
+                          {[
+                            { axis: 'x', label: 'X', min: -9, max: 9 },
+                            { axis: 'y', label: 'Y', min: fx.yMin, max: fx.yMax },
+                            { axis: 'z', label: 'Z', min: -9, max: 9 },
+                          ].map((ax) => (
+                            <div key={ax.axis} style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#94a3b8' }}>
+                                <span>{ax.label}</span>
+                                <span style={{ fontFamily: 'var(--font-mono)' }}>{Number(posVal[ax.axis] ?? 0).toFixed(1)}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={ax.min}
+                                max={ax.max}
+                                step="0.1"
+                                value={posVal[ax.axis] ?? 0}
+                                onChange={(e) =>
+                                  onChangeProStudioState &&
+                                  onChangeProStudioState({
+                                    [fx.posKey]: { ...posVal, [ax.axis]: parseFloat(e.target.value) },
+                                  })
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {fx.accKey && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginTop: '2px' }}>
+                          <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>Modifier:</span>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            {[
+                              { id: 'none', label: 'Open' },
+                              { id: 'barn_doors', label: 'Barn Doors' },
+                              { id: 'honeycomb', label: 'Honeycomb' },
+                              { id: 'both', label: 'Both' },
+                            ].map((opt) => (
+                              <button
+                                key={opt.id}
+                                onClick={() =>
+                                  onChangeProStudioState &&
+                                  onChangeProStudioState({ [fx.accKey]: opt.id })
+                                }
+                                style={{
+                                  padding: '2px 6px',
+                                  fontSize: '9.5px',
+                                  fontWeight: 700,
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  background: accVal === opt.id ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.05)',
+                                  border: `1px solid ${accVal === opt.id ? '#38bdf8' : 'rgba(255,255,255,0.1)'}`,
+                                  color: accVal === opt.id ? '#ffffff' : '#94a3b8',
+                                }}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Sightline Clearance for Long Lenses / Turntable + Fixture Spread */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '9px 10px', background: 'rgba(15, 23, 42, 0.65)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#e2e8f0' }}>
+                      Move Lights Out of Frame (Telephoto)
+                    </span>
+                    <button
+                      onClick={() =>
+                        onChangeProStudioState &&
+                        onChangeProStudioState({ fixturesOutOfWay: !proStudioState.fixturesOutOfWay })
+                      }
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '5px',
+                        fontSize: '10.5px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        background: proStudioState.fixturesOutOfWay ? 'rgba(56, 189, 248, 0.28)' : 'rgba(255,255,255,0.06)',
+                        border: `1px solid ${proStudioState.fixturesOutOfWay ? '#38bdf8' : 'rgba(255,255,255,0.14)'}`,
+                        color: proStudioState.fixturesOutOfWay ? '#38bdf8' : '#94a3b8',
+                      }}
+                    >
+                      {proStudioState.fixturesOutOfWay ? 'HIDDEN (LIGHTS ON)' : 'VISIBLE'}
+                    </button>
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8', marginBottom: '2px' }}>
+                      <span>Side / Ring Light Pullback Distance</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>{Number(proStudioState.fixtureDistanceScale ?? 1.0).toFixed(2)}×</span>
                     </div>
                     <input
                       type="range"
-                      min="0"
-                      max={fx.max}
+                      min="0.7"
+                      max="2.5"
                       step="0.05"
-                      value={proStudioState[fx.intKey] ?? 0}
+                      value={proStudioState.fixtureDistanceScale ?? 1.0}
                       onChange={(e) =>
                         onChangeProStudioState &&
-                        onChangeProStudioState({ [fx.intKey]: parseFloat(e.target.value) })
+                        onChangeProStudioState({ fixtureDistanceScale: parseFloat(e.target.value) })
                       }
                     />
                   </div>
-                ))}
+                </div>
+
+                {/* Add Custom Studio Lights */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '9px 10px', background: 'rgba(15, 23, 42, 0.55)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#ffffff' }}>
+                      EXTRA STUDIO LIGHTS ({(proStudioState.extraLights || []).length})
+                    </span>
+                    <button
+                      onClick={() => {
+                        const list = proStudioState.extraLights || [];
+                        const idx = list.length + 1;
+                        const angle = (idx * 1.1) % (Math.PI * 2);
+                        const newLight = {
+                          id: `extra-${Date.now()}`,
+                          name: `Accent Light #${idx}`,
+                          color: '#ffffff',
+                          intensity: 1.6,
+                          x: Number((Math.sin(angle) * 5.0).toFixed(1)),
+                          y: 2.6,
+                          z: Number((Math.cos(angle) * 5.0).toFixed(1)),
+                          accessory: 'barn_doors',
+                        };
+                        onChangeProStudioState && onChangeProStudioState({ extraLights: [...list, newLight] });
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 9px',
+                        background: 'rgba(16, 185, 129, 0.2)',
+                        border: '1px solid #34d399',
+                        borderRadius: '5px',
+                        color: '#34d399',
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Plus size={12} />
+                      <span>Add Light</span>
+                    </button>
+                  </div>
+                  {(proStudioState.extraLights || []).map((lt, idx) => (
+                    <div key={lt.id} style={{ padding: '7px', background: 'rgba(255,255,255,0.03)', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#e2e8f0' }}>{lt.name || `Light #${idx + 1}`}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <input
+                            type="color"
+                            value={lt.color || '#ffffff'}
+                            onChange={(e) => {
+                              const next = (proStudioState.extraLights || []).map((item) =>
+                                item.id === lt.id ? { ...item, color: e.target.value } : item
+                              );
+                              onChangeProStudioState && onChangeProStudioState({ extraLights: next });
+                            }}
+                            style={{ width: '20px', height: '16px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          />
+                          <button
+                            onClick={() => {
+                              const next = (proStudioState.extraLights || []).filter((item) => item.id !== lt.id);
+                              onChangeProStudioState && onChangeProStudioState({ extraLights: next });
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }}
+                            title="Remove light"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        step="0.1"
+                        value={lt.intensity ?? 1.5}
+                        onChange={(e) => {
+                          const next = (proStudioState.extraLights || []).map((item) =>
+                            item.id === lt.id ? { ...item, intensity: parseFloat(e.target.value) } : item
+                          );
+                          onChangeProStudioState && onChangeProStudioState({ extraLights: next });
+                        }}
+                      />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px' }}>
+                        {[
+                          { axis: 'x', label: 'X', min: -10, max: 10 },
+                          { axis: 'y', label: 'Y', min: 0.4, max: 7.5 },
+                          { axis: 'z', label: 'Z', min: -10, max: 10 },
+                        ].map((ax) => (
+                          <div key={ax.axis}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#94a3b8' }}>
+                              <span>{ax.label}</span>
+                              <span>{Number(lt[ax.axis] ?? 0).toFixed(1)}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={ax.min}
+                              max={ax.max}
+                              step="0.2"
+                              value={lt[ax.axis] ?? 0}
+                              onChange={(e) => {
+                                const next = (proStudioState.extraLights || []).map((item) =>
+                                  item.id === lt.id ? { ...item, [ax.axis]: parseFloat(e.target.value) } : item
+                                );
+                                onChangeProStudioState && onChangeProStudioState({ extraLights: next });
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                        {[
+                          { id: 'none', label: 'Open' },
+                          { id: 'barn_doors', label: 'Barn Doors' },
+                          { id: 'honeycomb', label: 'Honeycomb' },
+                          { id: 'both', label: 'Both' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.id}
+                            onClick={() => {
+                              const next = (proStudioState.extraLights || []).map((item) =>
+                                item.id === lt.id ? { ...item, accessory: opt.id } : item
+                              );
+                              onChangeProStudioState && onChangeProStudioState({ extraLights: next });
+                            }}
+                            style={{
+                              padding: '2px 6px',
+                              fontSize: '9px',
+                              fontWeight: 700,
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              background: (lt.accessory || 'none') === opt.id ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.05)',
+                              border: `1px solid ${(lt.accessory || 'none') === opt.id ? '#38bdf8' : 'rgba(255,255,255,0.1)'}`,
+                              color: (lt.accessory || 'none') === opt.id ? '#ffffff' : '#94a3b8',
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
                 {/* Backdrop Wall Tint & Motorized Turntable */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
@@ -1433,6 +1690,115 @@ export function StudioControlsDrawer({
               </div>
             </div>
 
+            {/* Autopilot & Aircraft/Vehicle Dynamics */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff' }}>
+                    {mode === 'planes' ? 'AIRCRAFT AUTOPILOT & FLIGHT SYSTEMS' : 'VEHICLE AUTOPILOT CRUISE'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                    {mode === 'planes'
+                      ? 'Autonomous flight path, landing gear retraction & lighting'
+                      : 'Autonomous driving loop with wheel spin & road tracking'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onToggleAutopilot && onToggleAutopilot()}
+                  style={{
+                    padding: '6px 12px',
+                    background: autopilotEnabled
+                      ? 'linear-gradient(135deg, #10b981, #059669)'
+                      : 'rgba(255, 255, 255, 0.08)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {autopilotEnabled ? 'AUTOPILOT ON' : 'AUTOPILOT OFF'}
+                </button>
+              </div>
+
+              {autopilotEnabled && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                  {[
+                    { id: 'circuit', label: 'Circuit Loop' },
+                    { id: 'figure8', label: 'Figure-8' },
+                    { id: 'orbit', label: 'Orbit Cruise' },
+                  ].map((pat) => (
+                    <button
+                      key={pat.id}
+                      onClick={() => onChangeAutopilotPattern && onChangeAutopilotPattern(pat.id)}
+                      style={{
+                        padding: '6px 8px',
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        background: autopilotPattern === pat.id ? 'rgba(16, 185, 129, 0.22)' : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${autopilotPattern === pat.id ? '#34d399' : 'var(--border-subtle)'}`,
+                        color: autopilotPattern === pat.id ? '#34d399' : 'var(--text-muted)',
+                      }}
+                    >
+                      {pat.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {mode === 'planes' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  {[
+                    { key: 'planeLandingGearRetracted', label: 'Retract Landing Gear into Plane', onLabel: 'RETRACTED', offLabel: 'EXTENDED' },
+                    { key: 'planeContrails', label: 'Engine & Wingtip Trails (Contrails)', onLabel: 'ON', offLabel: 'OFF' },
+                    { key: 'planeBanking', label: 'Airborne Banking & Pitch Dynamics', onLabel: 'ON', offLabel: 'OFF' },
+                    { key: 'planeStrobes', label: 'Wingtip Nav & Strobe Lights', onLabel: 'ON', offLabel: 'OFF' },
+                    { key: 'planeBeacons', label: 'Anti-Collision Red Beacons', onLabel: 'ON', offLabel: 'OFF' },
+                    { key: 'planeLandingLights', label: 'Landing / Taxi Volumetric Beams', onLabel: 'ON', offLabel: 'OFF' },
+                    { key: 'planeAfterburner', label: 'Jet Afterburner / Exhaust Glow', onLabel: 'ON', offLabel: 'OFF' },
+                  ].map((item) => {
+                    const active = Boolean(dynamicsState?.[item.key]);
+                    return (
+                      <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{item.label}</span>
+                        <button
+                          onClick={() =>
+                            onChangeDynamicsState &&
+                            onChangeDynamicsState({ [item.key]: !active })
+                          }
+                          style={{
+                            padding: '4px 10px',
+                            background: active ? 'rgba(56, 189, 248, 0.22)' : 'rgba(255, 255, 255, 0.05)',
+                            border: `1px solid ${active ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                            borderRadius: '6px',
+                            color: active ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {active ? item.onLabel : item.offLabel}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div
               style={{
                 background: 'var(--bg-card)',
@@ -1787,6 +2153,224 @@ export function StudioControlsDrawer({
         {/* ================= TAB: CAMERA DIRECTOR & REEL SEQUENCER ================= */}
         {activeTab === 'camera' && (
           <>
+            {/* Cinematic Optics & Shot-Aware Smart Focus Puller */}
+            <div
+              style={{
+                background: 'linear-gradient(180deg, rgba(244, 63, 94, 0.14), rgba(15, 23, 42, 0.6))',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid rgba(244, 63, 94, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Aperture size={14} color="#fb7185" />
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff', letterSpacing: '0.4px' }}>
+                    CINEMATIC LENS & FOCUS PULLER
+                  </span>
+                </div>
+                <button
+                  onClick={() =>
+                    onChangeLensState &&
+                    onChangeLensState({ dofEnabled: !lensState.dofEnabled })
+                  }
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    background: lensState.dofEnabled ? 'linear-gradient(135deg, #f43f5e, #e11d48)' : 'rgba(255,255,255,0.08)',
+                    color: '#ffffff',
+                  }}
+                >
+                  {lensState.dofEnabled ? 'DOF ACTIVE' : 'ENABLE DOF'}
+                </button>
+              </div>
+
+              {/* Shot Type + Lens Row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '3px', fontWeight: 600 }}>Shot Type</div>
+                  <select
+                    value={activeShotId}
+                    onChange={(e) => onSelectShot && onSelectShot(e.target.value)}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(15, 23, 42, 0.9)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '5px',
+                      color: '#ffffff',
+                      padding: '6px 8px',
+                      fontSize: '11px',
+                    }}
+                  >
+                    {availableShots.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '3px', fontWeight: 600 }}>Lens (Focal Length)</div>
+                  <select
+                    value={lensState.lensId || 'studio_wide'}
+                    onChange={(e) => {
+                      const lens = CAMERA_LENSES.find((l) => l.id === e.target.value);
+                      if (lens && onSelectLens) onSelectLens(lens);
+                    }}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(15, 23, 42, 0.9)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '5px',
+                      color: '#ffffff',
+                      padding: '6px 8px',
+                      fontSize: '11px',
+                    }}
+                  >
+                    {CAMERA_LENSES.map((l) => (
+                      <option key={l.id} value={l.id}>{l.shortLabel}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Aperture f-stop pills */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                  <span>Aperture (Depth of Field)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#fbbf24' }}>f/{lensState.fStop ?? 2.8}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+                  {[1.2, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 11.0].map((f) => {
+                    const active = Math.abs((lensState.fStop ?? 2.8) - f) < 0.05;
+                    return (
+                      <button
+                        key={f}
+                        onClick={() =>
+                          onChangeLensState &&
+                          onChangeLensState({ dofEnabled: true, fStop: f })
+                        }
+                        style={{
+                          padding: '4px 0',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          fontFamily: 'var(--font-mono)',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: active ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${active ? '#fbbf24' : 'rgba(255,255,255,0.08)'}`,
+                          color: active ? '#fde68a' : '#94a3b8',
+                        }}
+                      >
+                        f/{f}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Keep Focused On Target */}
+              <div>
+                <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                  Keep Focused On
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px' }}>
+                  {[
+                    { id: 'center', label: 'Center Body' },
+                    { id: 'front', label: mode === 'planes' ? 'Nose / Intake' : 'Front / Grille' },
+                    { id: 'cockpit', label: 'Cockpit / Cabin' },
+                    { id: 'rear', label: mode === 'planes' ? 'Tail / Exhaust' : 'Rear / Wing' },
+                    { id: 'wheels', label: mode === 'planes' ? 'Landing Gear' : 'Wheels / Rims' },
+                    { id: 'click', label: 'Click Point' },
+                  ].map((tgt) => {
+                    const active = tgt.id === 'click'
+                      ? Boolean(lensState.clickFocusArmed)
+                      : !lensState.clickFocusArmed && (lensState.focusTarget || 'center') === tgt.id;
+                    return (
+                      <button
+                        key={tgt.id}
+                        onClick={() => {
+                          if (!onChangeLensState) return;
+                          if (tgt.id === 'click') {
+                            onChangeLensState({ dofEnabled: true, clickFocusArmed: true });
+                          } else {
+                            onChangeLensState({
+                              dofEnabled: true,
+                              focusMode: 'auto',
+                              clickFocusArmed: false,
+                              focusTarget: tgt.id,
+                            });
+                          }
+                        }}
+                        style={{
+                          padding: '5px 6px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          background: active ? 'rgba(244, 63, 94, 0.24)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${active ? '#fb7185' : 'rgba(255,255,255,0.08)'}`,
+                          color: active ? '#ffffff' : '#94a3b8',
+                        }}
+                      >
+                        {tgt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Smart Focus Puller Style & Live Telemetry */}
+              <div style={{ background: 'rgba(2, 6, 23, 0.55)', padding: '8px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#e2e8f0' }}>
+                    Focus Puller Response
+                  </span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {[
+                      { id: 'cine_smooth', label: 'Cine Smooth' },
+                      { id: 'snappy', label: 'Snappy AF' },
+                      { id: 'rack_anticipate', label: 'Rack Pull' },
+                    ].map((st) => (
+                      <button
+                        key={st.id}
+                        onClick={() =>
+                          onChangeLensState &&
+                          onChangeLensState({ focusPullerEnabled: true, focusPullerStyle: st.id })
+                        }
+                        style={{
+                          padding: '3px 6px',
+                          fontSize: '9.5px',
+                          fontWeight: 700,
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: (lensState.focusPullerStyle || 'cine_smooth') === st.id ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${(lensState.focusPullerStyle || 'cine_smooth') === st.id ? '#38bdf8' : 'rgba(255,255,255,0.08)'}`,
+                          color: (lensState.focusPullerStyle || 'cine_smooth') === st.id ? '#38bdf8' : '#94a3b8',
+                        }}
+                      >
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
+                  <span>Focus: {(lensState.currentFocusDistance ?? 5.5).toFixed(2)}m</span>
+                  <span>DoF: {(lensState.dofNear ?? 4.2).toFixed(1)}m – {(lensState.dofFar ?? 7.8).toFixed(1)}m</span>
+                </div>
+                {lensState.focusPullerNote && (
+                  <div style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>
+                    {lensState.focusPullerNote}
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div>
               <div
                 style={{

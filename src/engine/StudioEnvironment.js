@@ -385,11 +385,13 @@ export function getEnvironmentSceneForSceneId(sceneId) {
       return createNightCityEnvironmentScene();
     case 'warehouse_courtyard_day':
     case 'monaco_circuit':
+    case 'balloon_valley_circuit':
     case 'vatican_city':
     case 'desert_workshop_garage':
     case 'construction_site':
       return createDaylightOutdoorEnvironmentScene('warm');
     case 'city_bokeh_street_day':
+    case 'city_gp_circuit':
     case 'canadian_downtown':
     case 'eglise_saint_polycarpe':
     case 'kent_lumber_yard':

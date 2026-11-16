@@ -48,6 +48,11 @@ export class VehicleController {
     this.probeCooldown = 0;
     this.distanceDrivenSinceProbe = 0;
 
+    // Autopilot state (cars & planes)
+    this.autopilotEnabled = false;
+    this.autopilotPattern = 'circuit'; // 'circuit' | 'figure8' | 'orbit'
+    this.autopilotTime = 0;
+
     this._raycaster = new THREE.Raycaster();
     this._downDir = new THREE.Vector3(0, -1, 0);
     this._rayOrigin = new THREE.Vector3();
@@ -374,14 +379,83 @@ export class VehicleController {
     });
   }
 
+  setAutopilot(enabled, pattern = null) {
+    this.autopilotEnabled = Boolean(enabled);
+    if (pattern) this.autopilotPattern = pattern;
+    if (!this.autopilotEnabled) {
+      this.speed *= 0.25;
+      this.verticalSpeed = 0;
+    }
+  }
+
   update(dt) {
     if (this.probeCooldown > 0) {
       this.probeCooldown = Math.max(0, this.probeCooldown - dt);
     }
 
-    if (this.mode !== 'drive') return;
-
     const isPlane = this.subjectType === 'planes';
+    const manualActive = this.mode === 'drive';
+    const userPressingKeys =
+      this.keys.has('KeyW') ||
+      this.keys.has('ArrowUp') ||
+      this.keys.has('KeyS') ||
+      this.keys.has('ArrowDown') ||
+      this.keys.has('KeyA') ||
+      this.keys.has('ArrowLeft') ||
+      this.keys.has('KeyD') ||
+      this.keys.has('ArrowRight');
+
+    if (this.autopilotEnabled && this.subjectType !== 'parts' && !(manualActive && userPressingKeys)) {
+      this.autopilotTime += dt;
+      const t = this.autopilotTime;
+      const targetSpeed = isPlane ? 16.0 : 8.5;
+      this.speed = THREE.MathUtils.lerp(this.speed, targetSpeed, Math.min(1, dt * 2.5));
+
+      let yawRate = 0.28;
+      if (this.autopilotPattern === 'figure8') {
+        yawRate = Math.sin(t * 0.55) * (isPlane ? 0.48 : 0.65);
+      } else if (this.autopilotPattern === 'orbit') {
+        yawRate = isPlane ? 0.32 : 0.42;
+      } else {
+        // 'circuit': long straightaways + smooth sweeping corners
+        const cyc = (t * 0.22) % 1.0;
+        yawRate = cyc > 0.45 && cyc < 0.95 ? (isPlane ? 0.42 : 0.58) : 0.04;
+      }
+
+      this.steerAngle = THREE.MathUtils.lerp(this.steerAngle, yawRate * 0.45, Math.min(1, dt * 6));
+      this.subjectHolder.rotation.y += yawRate * dt;
+
+      if (isPlane) {
+        // Gentle climb/cruise wave if autopilot engaged
+        const targetAlt = Math.max(3.5, this.subjectHolder.position.y);
+        const waveY = targetAlt + Math.sin(t * 0.65) * 1.4;
+        this.verticalSpeed = (waveY - this.subjectHolder.position.y) * 1.2;
+      } else {
+        this.verticalSpeed = 0;
+      }
+
+      this._prevPos.copy(this.subjectHolder.position);
+      const yaw = this.subjectHolder.rotation.y;
+      this._forwardVec.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+      this.subjectHolder.position.addScaledVector(this._forwardVec, this.speed * dt);
+      if (isPlane) {
+        this.subjectHolder.position.y = Math.max(1.5, this.subjectHolder.position.y + this.verticalSpeed * dt);
+      } else if (this.snapToGround) {
+        this.snapSubjectToGround();
+      }
+
+      this._deltaPos.subVectors(this.subjectHolder.position, this._prevPos);
+      const stepDist = this._deltaPos.length();
+      if (this.followCamera && this.orbitControls && stepDist > 1e-6) {
+        this.orbitControls.target.add(this._deltaPos);
+        this.camera.position.add(this._deltaPos);
+      }
+      this._emitPose();
+      return;
+    }
+
+    if (!manualActive) return;
+
     const throttle =
       (this.keys.has('KeyW') || this.keys.has('ArrowUp') ? 1 : 0) -
       (this.keys.has('KeyS') || this.keys.has('ArrowDown') ? 1 : 0);

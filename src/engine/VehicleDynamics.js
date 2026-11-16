@@ -14,9 +14,15 @@ export class VehicleDynamics {
       planeBanking: true,
       planeContrails: true,
       planeStrobes: true,
+      planeLandingGearRetracted: false,
+      planeLandingLights: true,
+      planeBeacons: true,
+      planeAfterburner: false,
     };
 
     this.spinnableWheels = [];
+    this.landingGearParts = [];
+    this.gearRetractProgress = 0; // 0 = extended, 1 = retracted
     this.currentMode = 'cars'; // 'cars' | 'planes' | 'parts'
     this.subjectRoot = null;
     this.subjectHolder = null;
@@ -76,6 +82,61 @@ export class VehicleDynamics {
       this.strobeWingL,
       this.strobeWingR
     );
+
+    // Anti-Collision Red Beacons (Top & Belly)
+    this.beaconTop = new THREE.PointLight('#ff1e38', 3.6, 12, 1.8);
+    this.beaconBelly = new THREE.PointLight('#ff1e38', 2.8, 10, 1.8);
+    const beaconGeo = new THREE.SphereGeometry(0.11, 10, 10);
+    this.beaconMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(14.0, 0.8, 1.2) });
+    this.beaconTopMesh = new THREE.Mesh(beaconGeo, this.beaconMat);
+    this.beaconBellyMesh = new THREE.Mesh(beaconGeo, this.beaconMat);
+    this.lightsRig.add(this.beaconTop, this.beaconBelly, this.beaconTopMesh, this.beaconBellyMesh);
+
+    // Plane Landing / Taxi Lights + Soft Volumetric Beam Cones
+    this.landingLightL = new THREE.SpotLight('#fffbeb', 6.5, 48, Math.PI / 7.5, 0.55, 1.4);
+    this.landingLightR = new THREE.SpotLight('#fffbeb', 6.5, 48, Math.PI / 7.5, 0.55, 1.4);
+    this.landingTargetL = new THREE.Object3D();
+    this.landingTargetR = new THREE.Object3D();
+    this.landingLightL.target = this.landingTargetL;
+    this.landingLightR.target = this.landingTargetR;
+
+    const coneGeo = new THREE.ConeGeometry(1.1, 6.5, 20, 1, true);
+    coneGeo.translate(0, -3.25, 0);
+    coneGeo.rotateX(Math.PI / 2);
+    this.landingConeMat = new THREE.MeshBasicMaterial({
+      color: '#fef9c3',
+      transparent: true,
+      opacity: 0.085,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    this.landingConeL = new THREE.Mesh(coneGeo, this.landingConeMat);
+    this.landingConeR = new THREE.Mesh(coneGeo, this.landingConeMat);
+    this.lightsRig.add(
+      this.landingLightL,
+      this.landingLightR,
+      this.landingTargetL,
+      this.landingTargetR,
+      this.landingConeL,
+      this.landingConeR
+    );
+
+    // Jet Afterburner / Engine Exhaust Glow
+    const abGeo = new THREE.ConeGeometry(0.32, 2.2, 16, 1, true);
+    abGeo.rotateX(Math.PI / 2);
+    this.afterburnerMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(5.5, 2.8, 0.6),
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    this.afterburnerL = new THREE.Mesh(abGeo, this.afterburnerMat);
+    this.afterburnerR = new THREE.Mesh(abGeo, this.afterburnerMat);
+    this.afterburnerLight = new THREE.PointLight('#fb923c', 5.0, 16, 1.6);
+    this.lightsRig.add(this.afterburnerL, this.afterburnerR, this.afterburnerLight);
   }
 
   _buildPlaneContrails() {
@@ -126,6 +187,8 @@ export class VehicleDynamics {
     this.currentMode = mode;
     this.bounds = bounds || { w: 2.2, h: 1.4, d: 4.8 };
     this.spinnableWheels = [];
+    this.landingGearParts = [];
+    this.gearRetractProgress = this.state.planeLandingGearRetracted ? 1 : 0;
 
     if (!subjectRoot) return;
 
@@ -134,10 +197,30 @@ export class VehicleDynamics {
     const tmpBox = new THREE.Box3();
     const tmpCenter = new THREE.Vector3();
     const tmpSize = new THREE.Vector3();
+    const gearRe = /\b(gear|landing|strut|bogie|undercarriage|nosegear|maingear|wheel|tire|tyre)\b|landing_gear|nose_gear|main_gear/i;
     subjectRoot.traverse((obj) => {
       if (obj.isMesh && obj.geometry) {
         const n = (obj.name || '').toLowerCase();
+        const pName = (obj.parent?.name || '').toLowerCase();
         if (n.includes('steering')) return;
+
+        if (mode === 'planes' && (gearRe.test(n) || gearRe.test(pName))) {
+          tmpBox.setFromObject(obj);
+          tmpBox.getCenter(tmpCenter);
+          tmpBox.getSize(tmpSize);
+          // Only retract lower-body gear parts (below mid-fuselage) so wings/fuselage are never touched
+          if (tmpCenter.y < this.bounds.h * 0.45 && tmpSize.length() < this.bounds.w * 0.45) {
+            this.landingGearParts.push({
+              mesh: obj,
+              origPos: obj.position.clone(),
+              origRot: obj.rotation.clone(),
+              origScale: obj.scale.clone(),
+              origVisible: obj.visible,
+              sideSign: tmpCenter.x >= 0 ? 1 : -1,
+            });
+          }
+        }
+
         if (n.includes('wheel') || n.includes('tire') || n.includes('tyre') || n.includes('rim')) {
           obj.geometry.computeBoundingBox();
           if (obj.geometry.boundingBox) {
@@ -184,6 +267,33 @@ export class VehicleDynamics {
     this.strobeWingR.position.set(wingTipX, wingTipY + 0.08, wingTipZ + 0.2);
 
     this.strobeTail.position.set(0, h * 0.92, d * 0.48);
+
+    // Anti-collision beacons (top spine & belly)
+    this.beaconTop.position.set(0, h * 0.85, -d * 0.05);
+    this.beaconTopMesh.position.copy(this.beaconTop.position);
+    this.beaconBelly.position.set(0, Math.max(0.15, h * 0.14), d * 0.08);
+    this.beaconBellyMesh.position.copy(this.beaconBelly.position);
+
+    // Landing / taxi lights & volumetric cones
+    const landX = w * 0.14;
+    const landY = Math.max(0.28, h * 0.34);
+    const landZ = -d * 0.32;
+    this.landingLightL.position.set(-landX, landY, landZ);
+    this.landingLightR.position.set(landX, landY, landZ);
+    this.landingTargetL.position.set(-landX * 1.1, -1.4, landZ - 18);
+    this.landingTargetR.position.set(landX * 1.1, -1.4, landZ - 18);
+    this.landingConeL.position.set(-landX, landY, landZ);
+    this.landingConeR.position.set(landX, landY, landZ);
+    this.landingConeL.lookAt(this.landingTargetL.position);
+    this.landingConeR.lookAt(this.landingTargetR.position);
+
+    // Afterburner / jet exhaust glow
+    const abX = w * 0.11;
+    const abY = Math.max(0.35, h * 0.42);
+    const abZ = d * 0.48;
+    this.afterburnerL.position.set(-abX, abY, abZ + 0.95);
+    this.afterburnerR.position.set(abX, abY, abZ + 0.95);
+    this.afterburnerLight.position.set(0, abY, abZ + 1.2);
   }
 
   setHeadlights(enabled) {
@@ -226,6 +336,64 @@ export class VehicleDynamics {
     this.strobeWingL.visible = strobeOn;
     this.strobeWingR.visible = strobeOn;
 
+    // Anti-collision red beacons (pulsing 0.9s sweep)
+    const showBeacons = isPlane && Boolean(s.planeBeacons);
+    const beaconPulse = showBeacons ? Math.pow(Math.max(0, Math.sin(elapsed * 4.2)), 4.0) : 0;
+    this.beaconTop.visible = showBeacons && beaconPulse > 0.08;
+    this.beaconBelly.visible = showBeacons && beaconPulse > 0.08;
+    this.beaconTop.intensity = beaconPulse * 5.2;
+    this.beaconBelly.intensity = beaconPulse * 3.8;
+    this.beaconTopMesh.visible = showBeacons;
+    this.beaconBellyMesh.visible = showBeacons;
+    this.beaconMat.color.setRGB(1.5 + beaconPulse * 14.0, 0.1 + beaconPulse * 0.8, 0.15 + beaconPulse * 1.1);
+
+    // Plane Landing / Taxi Lights + Volumetric Cones
+    const showLanding = isPlane && Boolean(s.planeLandingLights) && !s.planeLandingGearRetracted;
+    this.landingLightL.visible = showLanding;
+    this.landingLightR.visible = showLanding;
+    this.landingConeL.visible = showLanding;
+    this.landingConeR.visible = showLanding;
+
+    // Plane Afterburner / Jet Exhaust Glow
+    const showAfterburner = isPlane && Boolean(s.planeAfterburner);
+    this.afterburnerL.visible = showAfterburner;
+    this.afterburnerR.visible = showAfterburner;
+    this.afterburnerLight.visible = showAfterburner;
+    if (showAfterburner) {
+      const flicker = 0.85 + Math.sin(elapsed * 38.0) * 0.15 + Math.cos(elapsed * 23.0) * 0.08;
+      this.afterburnerL.scale.set(1, 1, flicker);
+      this.afterburnerR.scale.set(1, 1, flicker);
+      this.afterburnerLight.intensity = 4.5 * flicker;
+      this.afterburnerMat.opacity = 0.62 * flicker;
+    }
+
+    // 1b. Landing Gear Retraction Animation (planes)
+    if (isPlane && this.landingGearParts.length > 0) {
+      const targetGear = s.planeLandingGearRetracted ? 1 : 0;
+      this.gearRetractProgress = THREE.MathUtils.lerp(
+        this.gearRetractProgress,
+        targetGear,
+        Math.min(1, dt * 3.5)
+      );
+      const p = this.gearRetractProgress;
+      const hidden = p > 0.96;
+      for (const g of this.landingGearParts) {
+        g.mesh.visible = g.origVisible && !hidden;
+        if (!hidden) {
+          // Fold upward & inward into fuselage/wing bays
+          g.mesh.position.set(
+            g.origPos.x * (1 - p * 0.25),
+            g.origPos.y + p * 0.42,
+            g.origPos.z + p * 0.22
+          );
+          g.mesh.rotation.x = g.origRot.x + p * 1.25;
+          g.mesh.rotation.z = g.origRot.z + g.sideSign * p * 0.35;
+          const sc = 1 - p * 0.45;
+          g.mesh.scale.set(g.origScale.x * sc, g.origScale.y * sc, g.origScale.z * sc);
+        }
+      }
+    }
+
     // 2. Road texture scroll + hub-centered wheel spin
     if (s.wheelSpin && roadTexture && activeSceneId === 'outdoor_world') {
       roadTexture.offset.y -= dt * 3.6;
@@ -238,11 +406,15 @@ export class VehicleDynamics {
     }
 
     // 3. Plane Banking & Pitch Dynamics
+    const isAirborne =
+      activeSceneId === 'cloud_deck' ||
+      (this.subjectHolder && this.subjectHolder.position.y > 0.25) ||
+      Boolean(s.planeLandingGearRetracted);
     if (this.subjectRoot) {
-      if (isPlane && s.planeBanking && activeSceneId === 'cloud_deck') {
+      if (isPlane && s.planeBanking && isAirborne) {
         const roll = Math.sin(elapsed * 0.85) * 0.14;
         const pitch = Math.sin(elapsed * 0.55) * 0.045 + 0.05;
-        const bobY = 1.8 + Math.sin(elapsed * 1.1) * 0.35;
+        const bobY = (activeSceneId === 'cloud_deck' ? 1.8 : 0.35) + Math.sin(elapsed * 1.1) * 0.28;
         this.subjectRoot.rotation.z = roll;
         this.subjectRoot.rotation.x = pitch;
         this.subjectRoot.position.y = bobY;
@@ -257,9 +429,6 @@ export class VehicleDynamics {
     }
 
     // 4. Plane Jet Engine & Wingtip Contrails (only in flight scenes or when airborne)
-    const isAirborne =
-      activeSceneId === 'cloud_deck' ||
-      (this.subjectHolder && this.subjectHolder.position.y > 0.75);
     const showContrails = isPlane && s.planeContrails && isAirborne;
     this.contrailsGroup.visible = showContrails;
     if (showContrails) {

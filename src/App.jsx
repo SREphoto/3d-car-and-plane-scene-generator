@@ -45,6 +45,17 @@ export default function App() {
     ...STUDIO_LOOK_PRESETS.clean_commercial,
     turntableEnabled: true,
     turntableSpeed: 0.25,
+    fixturesOutOfWay: false,
+    fixtureDistanceScale: 1.0,
+    overheadPos: { x: 0, y: 3.85, z: -0.2 },
+    overheadAccessory: 'none',
+    leftRimPos: { x: -4.55, y: 1.75, z: -0.5 },
+    leftRimAccessory: 'none',
+    rightRimPos: { x: 4.55, y: 1.75, z: -0.5 },
+    rightRimAccessory: 'none',
+    ringPos: { x: -2.55, y: 1.58, z: -4.85 },
+    ringAccessory: 'none',
+    extraLights: [],
   });
 
   // Physical Camera Lenses & Linear-HDR Optical Bokeh State
@@ -58,6 +69,12 @@ export default function App() {
     manualFocusDistance: 5.5,
     bokehBoost: 1.55,
     currentFocusDistance: 5.5,
+    focusTarget: 'center',
+    focusPullerEnabled: true,
+    focusPullerStyle: 'cine_smooth',
+    focusPullerNote: 'Holding vehicle center with balanced cine follow-focus',
+    dofNear: 4.2,
+    dofFar: 7.8,
   });
 
   // Aspect Ratio & Safe Frame
@@ -90,7 +107,14 @@ export default function App() {
     planeBanking: true,
     planeContrails: true,
     planeStrobes: true,
+    planeLandingGearRetracted: false,
+    planeLandingLights: true,
+    planeBeacons: true,
+    planeAfterburner: false,
   });
+
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false);
+  const [autopilotPattern, setAutopilotPattern] = useState('circuit');
 
   // Car Paint & Shading Customizer
   const [paintColor, setPaintColor] = useState('#b91c1c');
@@ -854,6 +878,17 @@ export default function App() {
         alignToSlope={alignToSlope}
         onToggleAlignToSlope={handleToggleAlignToSlope}
         onResetVehiclePose={handleResetVehiclePose}
+        autopilotEnabled={autopilotEnabled}
+        autopilotPattern={autopilotPattern}
+        onToggleAutopilot={() => {
+          const next = !autopilotEnabled;
+          setAutopilotEnabled(next);
+          sceneManagerRef.current?.setAutopilot(next, autopilotPattern);
+        }}
+        onChangeAutopilotPattern={(pattern) => {
+          setAutopilotPattern(pattern);
+          sceneManagerRef.current?.setAutopilot(autopilotEnabled, pattern);
+        }}
         postFx={postFx}
         onChangePostFx={handleChangePostFx}
         // Camera & Sequencer

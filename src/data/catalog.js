@@ -980,6 +980,22 @@ const ALL_SCENES_CATALOG = [
     description: 'Floodlit Singapore Grand Prix night street circuit on the main pit straight with overhead light gantries, kerbs, and glowing skyline bokeh.',
   },
   {
+    id: 'city_gp_circuit',
+    name: 'Metropolitan City Grand Prix Circuit',
+    type: 'procedural',
+    modes: ['cars', 'planes', 'parts'],
+    badge: 'CITY GP TRACK',
+    description: 'High-speed urban Grand Prix street circuit surrounded by lit glass skyscrapers, FIA kerbs, Armco barriers, grandstands, and start/finish gantry.',
+  },
+  {
+    id: 'balloon_valley_circuit',
+    name: 'Hot Air Balloon Valley Race Circuit',
+    type: 'procedural',
+    modes: ['cars', 'planes', 'parts'],
+    badge: 'BALLOON GP',
+    description: 'Scenic alpine valley race track with FIA kerbs, distant city skyline, and 16 animated hot air balloons drifting across a golden-hour sky.',
+  },
+  {
     id: 'red_bull_f1_garage',
     name: 'Red Bull Racing F1 Pit Garage',
     type: 'glb',
