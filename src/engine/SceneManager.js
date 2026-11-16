@@ -1349,7 +1349,7 @@ export class SceneManager {
         Boolean(this.vehicleDynamics?.state?.planeLandingGearRetracted) ||
         Boolean(this.vehicleController?.autopilotEnabled));
     const showGroundShadows = this.activeSceneId !== 'cloud_deck' && !isPlaneAirborne;
-    this.enhancer.setGroundShadowsVisible(showGroundShadows, 0.34);
+    this.enhancer?.setGroundContactVisible?.(showGroundShadows, 0.34);
 
     // 5. Update Studio Lighting Rig
     this.lightingRig.update(dt, this.elapsed, this.vehicleDynamics.state.wheelSpin);
