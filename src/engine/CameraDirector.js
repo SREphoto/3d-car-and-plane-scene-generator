@@ -43,6 +43,9 @@ export class CameraDirector {
 
     this.activeShotId = 'free_orbit';
     this.shotSpeed = 1.0;
+    this.shotDistanceScale = 1.0;
+    this.shotAzimuthDeg = 0;
+    this.shotElevationDeg = 0;
     this.referenceFov = 42;
     this.baseFov = 42;
     this.focalLengthMm = 31; // ~42 deg vertical FOV on full-frame
@@ -71,6 +74,116 @@ export class CameraDirector {
     this._localTarget = new THREE.Vector3();
     this._yAxis = new THREE.Vector3(0, 1, 0);
     this._dollyVec = new THREE.Vector3();
+    this._rightAxis = new THREE.Vector3();
+  }
+
+  setShotFraming({ distanceScale, azimuthDeg, elevationDeg } = {}) {
+    const prevDist = this.shotDistanceScale;
+    const prevAz = this.shotAzimuthDeg;
+    const prevEl = this.shotElevationDeg;
+
+    if (distanceScale !== undefined && Number.isFinite(Number(distanceScale))) {
+      this.shotDistanceScale = THREE.MathUtils.clamp(Number(distanceScale), 0.3, 3.0);
+    }
+    if (azimuthDeg !== undefined && Number.isFinite(Number(azimuthDeg))) {
+      this.shotAzimuthDeg = THREE.MathUtils.clamp(Number(azimuthDeg), -180, 180);
+    }
+    if (elevationDeg !== undefined && Number.isFinite(Number(elevationDeg))) {
+      this.shotElevationDeg = THREE.MathUtils.clamp(Number(elevationDeg), -35, 65);
+    }
+
+    // Also apply framing changes immediately in free_orbit so distance & angle sliders work in every mode
+    if (this.activeShotId === 'free_orbit' && this.camera && this.controls) {
+      this._dollyVec.subVectors(this.camera.position, this.controls.target);
+      const curDist = this._dollyVec.length();
+      if (curDist > 0.05) {
+        const dAzRad = THREE.MathUtils.degToRad(this.shotAzimuthDeg - prevAz);
+        if (Math.abs(dAzRad) > 1e-5) {
+          this._dollyVec.applyAxisAngle(this._yAxis, dAzRad);
+        }
+        const dElRad = THREE.MathUtils.degToRad(this.shotElevationDeg - prevEl);
+        if (Math.abs(dElRad) > 1e-5) {
+          this._rightAxis.crossVectors(this._dollyVec, this._yAxis);
+          if (this._rightAxis.lengthSq() > 1e-6) {
+            this._rightAxis.normalize();
+            const rotated = this._dollyVec.clone().applyAxisAngle(this._rightAxis, dElRad);
+            // Prevent flipping past vertical zenith or below floor
+            const horizLen = Math.hypot(rotated.x, rotated.z);
+            if (horizLen > 0.15 * rotated.length()) {
+              this._dollyVec.copy(rotated);
+            }
+          }
+        }
+        const ratio = prevDist > 0.01 ? this.shotDistanceScale / prevDist : 1.0;
+        const safeMax = Math.max(this._getSafeMaxDollyDistance(), this.bounds ? Math.max(this.bounds.w, this.bounds.d) * 4.5 : 40);
+        const nextDist = THREE.MathUtils.clamp(
+          curDist * ratio,
+          this.controls.minDistance || 0.8,
+          Math.min(this.controls.maxDistance || 420, safeMax)
+        );
+        this._dollyVec.normalize().multiplyScalar(nextDist);
+        this.camera.position.copy(this.controls.target).add(this._dollyVec);
+        if (this.camera.position.y < 0.18 + this.subjectYOffset && this.sceneId !== 'cloud_deck') {
+          this.camera.position.y = 0.18 + this.subjectYOffset;
+        }
+        this.controls.update();
+      }
+    } else if (this.activeShotId !== 'free_orbit') {
+      this.update(0, this.subjectYOffset);
+    }
+  }
+
+  resetShotFraming() {
+    this.setShotFraming({ distanceScale: 1.0, azimuthDeg: 0, elevationDeg: 0 });
+    if (this.activeShotId === 'free_orbit') {
+      this.resetToHeroIso();
+    }
+  }
+
+  getCurrentSubjectDistance() {
+    if (!this.camera || !this.controls) return 0;
+    return this.camera.position.distanceTo(this.controls.target);
+  }
+
+  _applyFramingOffset(localCam, localTarget, subjectBobY, distScale, azDeg, elDeg) {
+    this._dollyVec.subVectors(localCam, localTarget);
+    const baseLen = this._dollyVec.length();
+    if (baseLen < 1e-4) return;
+
+    if (Math.abs(azDeg) > 0.01) {
+      this._dollyVec.applyAxisAngle(this._yAxis, THREE.MathUtils.degToRad(azDeg));
+    }
+
+    if (Math.abs(elDeg) > 0.01) {
+      this._rightAxis.crossVectors(this._dollyVec, this._yAxis);
+      if (this._rightAxis.lengthSq() > 1e-6) {
+        this._rightAxis.normalize();
+        const curHoriz = Math.hypot(this._dollyVec.x, this._dollyVec.z);
+        const curPitch = Math.atan2(this._dollyVec.y, Math.max(1e-4, curHoriz));
+        const targetPitch = THREE.MathUtils.clamp(
+          curPitch + THREE.MathUtils.degToRad(elDeg),
+          THREE.MathUtils.degToRad(-75),
+          THREE.MathUtils.degToRad(82)
+        );
+        const appliedDelta = targetPitch - curPitch;
+        this._dollyVec.applyAxisAngle(this._rightAxis, appliedDelta);
+      }
+    }
+
+    const clampedScale = THREE.MathUtils.clamp(distScale, 0.3, 3.0);
+    const scaledLen = Math.max(0.65, baseLen * clampedScale);
+    this._dollyVec.normalize().multiplyScalar(scaledLen);
+
+    localCam.copy(localTarget).add(this._dollyVec);
+
+    // Keep camera above ground unless flying in cloud_deck / elevated underpass
+    const isElevatedFlyby =
+      this.sceneId === 'cloud_deck' ||
+      (this.activeShotId === 'plane_flyby_underpass' && subjectBobY > 0.2);
+    const minGroundY = isElevatedFlyby ? -20 : 0.16;
+    if (localCam.y < minGroundY) {
+      localCam.y = minGroundY;
+    }
   }
 
   bindSubjectHolder(holder) {
@@ -307,6 +420,21 @@ export class CameraDirector {
         this._dollyVec.y = Math.min(this._dollyVec.y, Math.max(1.35, h * 1.15) + scaledDist * 0.06);
       }
       localCam.copy(localTarget).add(this._dollyVec);
+    }
+
+    if (
+      Math.abs(this.shotDistanceScale - 1.0) > 0.005 ||
+      Math.abs(this.shotAzimuthDeg) > 0.05 ||
+      Math.abs(this.shotElevationDeg) > 0.05
+    ) {
+      this._applyFramingOffset(
+        localCam,
+        localTarget,
+        this.subjectYOffset,
+        this.shotDistanceScale,
+        this.shotAzimuthDeg,
+        this.shotElevationDeg
+      );
     }
 
     this._applySubjectFrame(localCam, localTarget);
@@ -637,6 +765,24 @@ export class CameraDirector {
         break;
     }
 
+    const activeClip =
+      this.isPlayingSequence && this.sequence[this.currentClipIndex]
+        ? this.sequence[this.currentClipIndex]
+        : null;
+    const distScale =
+      activeClip && Number.isFinite(Number(activeClip.distanceScale))
+        ? Number(activeClip.distanceScale)
+        : this.shotDistanceScale;
+    const azDeg =
+      activeClip && Number.isFinite(Number(activeClip.azimuthDeg))
+        ? Number(activeClip.azimuthDeg)
+        : this.shotAzimuthDeg;
+    const elDeg =
+      activeClip && Number.isFinite(Number(activeClip.elevationDeg))
+        ? Number(activeClip.elevationDeg)
+        : this.shotElevationDeg;
+
+    this._applyFramingOffset(localCam, localTarget, subjectBobY, distScale, azDeg, elDeg);
     this._applySubjectFrame(localCam, localTarget);
     this.camera.updateProjectionMatrix();
     this.camera.lookAt(this.controls.target);

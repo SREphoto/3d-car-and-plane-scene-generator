@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { validateGlb } from './glb_validator.mjs';
 import { loadCatalog } from './catalog_loader.mjs';
 import { CameraDirector, focalLengthToVerticalFovDeg } from '../src/engine/CameraDirector.js';
+import { VehicleDynamics } from '../src/engine/VehicleDynamics.js';
 import { SCENE_LIGHTING_PROFILES } from '../src/engine/LightingRig.js';
 import { STUDIO_LOOK_PRESETS, STUDIO_FLOOR_FINISHES } from '../src/engine/ProceduralStages.js';
 
@@ -74,7 +75,7 @@ async function main() {
 
   // 2. Catalog verification
   const catalog = await loadCatalog({ isDev: true });
-  check('CARS_CATALOG has 44 vehicles (21 prior + 23 new incl. variants)', catalog.CARS_CATALOG.length === 44, `count=${catalog.CARS_CATALOG.length}`);
+  check('CARS_CATALOG has 71 vehicles (44 prior + 27 new)', catalog.CARS_CATALOG.length === 71, `count=${catalog.CARS_CATALOG.length}`);
   check('PLANES_CATALOG has 12 aircraft/rotorcraft (8 prior + 4 new)', catalog.PLANES_CATALOG.length === 12, `count=${catalog.PLANES_CATALOG.length}`);
   check('CAMERA_LENSES exports full 8-option kit (Studio + 24/35/50/85/135/200/300mm)', catalog.rawModule?.CAMERA_LENSES?.length === 8, `count=${catalog.rawModule?.CAMERA_LENSES?.length}`);
 
@@ -106,6 +107,33 @@ async function main() {
     'audi-a4-b8-sedan',
     '2024-ford-f150-raptor-r',
     'punisher-mrap-armored',
+    '2026-ferrari-sf-26',
+    '2026-mclaren-mcl40',
+    '2026-mercedes-w17',
+    '2026-haas-vf-26',
+    '2026-cadillac-mac-26',
+    '2026-williams-fw48',
+    '2023-mercedes-amg-one',
+    '2023-lotus-emira',
+    '2022-acura-nsx-type-s',
+    '2018-acura-nsx-gt3',
+    '2005-acura-nsx',
+    '2020-mercedes-amg-gt3',
+    '2018-mercedes-c-coupe-dtm',
+    '2002-mercedes-clk-dtm',
+    '1996-mercedes-e50-amg',
+    '2018-bmw-m5-f90',
+    'bmw-m4-red-eyes',
+    'bmw-m4-red-bull-dtm',
+    'bmw-m8-competition-widebody',
+    'bmw-m3-f80',
+    'bmw-m2-coupe',
+    '2019-bmw-x2-msport',
+    '2009-bmw-128i-coupe',
+    'bmw-e34-stance',
+    '1990-bmw-m3-e30-sport-evo',
+    '1988-bmw-m3-e30-evo2',
+    'bmw-m3-e30-classic',
   ];
 
   for (const id of newVehicleIds) {
@@ -271,6 +299,73 @@ async function main() {
     'Tight indoor showroom clamps telephoto auto-dolly inside room walls (<= 8.25m)',
     distShowroom <= 8.25,
     `clampedDist=${distShowroom.toFixed(2)}m`
+  );
+
+  // 5. Cinematic Shot Distance & Angle Framing (Cars & Planes)
+  director.setSceneId('pro_lighting_studio');
+  director.setPhysicalLens(null, { autoDolly: false });
+  director.setBounds({ w: 2.0, h: 1.3, d: 4.8 }, 'cars');
+  director.setShot('orbit_360');
+  director.resetShotFraming();
+  director.update(0.1, 0);
+  const stdShotDist = cam.position.distanceTo(fakeControls.target);
+  const stdCamPos = cam.position.clone();
+
+  director.setShotFraming({ distanceScale: 2.0 });
+  const farShotDist = cam.position.distanceTo(fakeControls.target);
+  check(
+    'Cinematic shot distanceScale=2.0 doubles camera distance from vehicle',
+    Math.abs(farShotDist / stdShotDist - 2.0) < 0.05,
+    `std=${stdShotDist.toFixed(2)}m -> far=${farShotDist.toFixed(2)}m`
+  );
+
+  director.setShotFraming({ distanceScale: 0.5 });
+  const closeShotDist = cam.position.distanceTo(fakeControls.target);
+  check(
+    'Cinematic shot distanceScale=0.5 halves camera distance from vehicle',
+    Math.abs(closeShotDist / stdShotDist - 0.5) < 0.05,
+    `std=${stdShotDist.toFixed(2)}m -> close=${closeShotDist.toFixed(2)}m`
+  );
+
+  director.setShotFraming({ distanceScale: 1.0, azimuthDeg: 90, elevationDeg: 0 });
+  const rotVecStd = stdCamPos.clone().sub(fakeControls.target).setY(0).normalize();
+  const rotVec90 = cam.position.clone().sub(fakeControls.target).setY(0).normalize();
+  check(
+    'Cinematic shot azimuthDeg=90 rotates camera ray by 90° around subject',
+    Math.abs(rotVecStd.dot(rotVec90)) < 0.05,
+    `dot=${rotVecStd.dot(rotVec90).toFixed(4)}`
+  );
+
+  director.setShotFraming({ azimuthDeg: 0, elevationDeg: 25 });
+  const elevY = cam.position.y;
+  check(
+    'Cinematic shot elevationDeg=25 raises camera angle cleanly above subject',
+    elevY > stdCamPos.y + 1.0,
+    `stdY=${stdCamPos.y.toFixed(2)}m -> elevY=${elevY.toFixed(2)}m`
+  );
+
+  // 6. VehicleDynamics Plane Addon Cleanup & Subtle Banking Motion
+  const mockScene = new THREE.Scene();
+  const dyn = new VehicleDynamics(mockScene);
+  const planeRoot = new THREE.Group();
+  const planeHolder = new THREE.Group();
+  planeHolder.add(planeRoot);
+  dyn.bindSubject(planeRoot, 'planes', { w: 18, h: 5, d: 21 }, planeHolder);
+  dyn.update(0.016, 1.5, null, 'cloud_deck', 0);
+  check(
+    'Plane scene addons (afterburner, contrails, beacons, strobes, landing cones) removed',
+    !dyn.afterburnerL && !dyn.contrailsGroup && !dyn.beaconTop && !dyn.strobeTail && !dyn.landingConeL,
+    'Only subtle airborne banking dynamics remain'
+  );
+  let maxRoll = 0;
+  for (let t = 0; t < 20; t += 0.25) {
+    dyn.update(0.016, t, null, 'cloud_deck', 0);
+    maxRoll = Math.max(maxRoll, Math.abs(planeRoot.rotation.z));
+  }
+  check(
+    'Plane airborne banking roll is subtle (<= 0.05 rad / ~2.9 deg)',
+    maxRoll > 0.01 && maxRoll <= 0.05,
+    `maxRoll=${maxRoll.toFixed(4)} rad`
   );
 
   console.log(`\n=== Summary: ${passed} passed, ${failed} failed ===\n`);

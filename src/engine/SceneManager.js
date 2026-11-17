@@ -1346,7 +1346,6 @@ export class SceneManager {
       this.activeMode === 'planes' &&
       (this.activeSceneId === 'cloud_deck' ||
         this.subjectHolder.position.y > 0.25 ||
-        Boolean(this.vehicleDynamics?.state?.planeLandingGearRetracted) ||
         Boolean(this.vehicleController?.autopilotEnabled));
     const showGroundShadows = this.activeSceneId !== 'cloud_deck' && !isPlaneAirborne;
     this.enhancer?.setGroundContactVisible?.(showGroundShadows, 0.34);

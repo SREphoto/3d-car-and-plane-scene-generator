@@ -85,6 +85,10 @@ export function StudioControlsDrawer({
   onSelectShot,
   shotSpeed,
   onChangeShotSpeed,
+  shotFraming = { distanceScale: 1.0, azimuthDeg: 0, elevationDeg: 0 },
+  onChangeShotFraming,
+  onResetShotFraming,
+  subjectDistanceMeters = 0,
   cameraFov,
   onChangeCameraFov,
   isPlayingSequence,
@@ -1709,7 +1713,7 @@ export function StudioControlsDrawer({
                   </div>
                   <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                     {mode === 'planes'
-                      ? 'Autonomous flight path, landing gear retraction & lighting'
+                      ? 'Autonomous flight path & gentle airborne motion'
                       : 'Autonomous driving loop with wheel spin & road tracking'}
                   </div>
                 </div>
@@ -1762,13 +1766,7 @@ export function StudioControlsDrawer({
               {mode === 'planes' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                   {[
-                    { key: 'planeLandingGearRetracted', label: 'Retract Landing Gear into Plane', onLabel: 'RETRACTED', offLabel: 'EXTENDED' },
-                    { key: 'planeContrails', label: 'Engine & Wingtip Trails (Contrails)', onLabel: 'ON', offLabel: 'OFF' },
-                    { key: 'planeBanking', label: 'Airborne Banking & Pitch Dynamics', onLabel: 'ON', offLabel: 'OFF' },
-                    { key: 'planeStrobes', label: 'Wingtip Nav & Strobe Lights', onLabel: 'ON', offLabel: 'OFF' },
-                    { key: 'planeBeacons', label: 'Anti-Collision Red Beacons', onLabel: 'ON', offLabel: 'OFF' },
-                    { key: 'planeLandingLights', label: 'Landing / Taxi Volumetric Beams', onLabel: 'ON', offLabel: 'OFF' },
-                    { key: 'planeAfterburner', label: 'Jet Afterburner / Exhaust Glow', onLabel: 'ON', offLabel: 'OFF' },
+                    { key: 'planeBanking', label: 'Airborne Banking & Gentle Flight Motion', onLabel: 'ON', offLabel: 'OFF' },
                   ].map((item) => {
                     const active = Boolean(dynamicsState?.[item.key]);
                     return (
@@ -2371,6 +2369,220 @@ export function StudioControlsDrawer({
               </div>
             </div>
 
+            {/* Shot Framing: Distance & Angle Controls */}
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff', letterSpacing: '0.4px' }}>
+                    SHOT DISTANCE &amp; ANGLE
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                    Adjust camera distance &amp; angle around the {mode === 'planes' ? 'aircraft' : 'vehicle'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onResetShotFraming && onResetShotFraming()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 8px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '5px',
+                    color: '#cbd5e1',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <RefreshCw size={10} />
+                  <span>Reset</span>
+                </button>
+              </div>
+
+              {/* Distance Slider */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
+                  <span>Distance from {mode === 'planes' ? 'Plane' : 'Car'}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8' }}>
+                    {(shotFraming.distanceScale ?? 1.0).toFixed(2)}×
+                    {subjectDistanceMeters > 0 ? ` (${subjectDistanceMeters.toFixed(1)}m)` : ''}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.35"
+                  max="2.80"
+                  step="0.05"
+                  value={shotFraming.distanceScale ?? 1.0}
+                  onChange={(e) =>
+                    onChangeShotFraming &&
+                    onChangeShotFraming({ distanceScale: parseFloat(e.target.value) })
+                  }
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '5px' }}>
+                  {[
+                    { label: 'Close 0.55×', val: 0.55 },
+                    { label: 'Std 1.0×', val: 1.0 },
+                    { label: 'Wide 1.6×', val: 1.6 },
+                    { label: 'Far 2.3×', val: 2.3 },
+                  ].map((p) => {
+                    const active = Math.abs((shotFraming.distanceScale ?? 1.0) - p.val) < 0.04;
+                    return (
+                      <button
+                        key={p.label}
+                        onClick={() => onChangeShotFraming && onChangeShotFraming({ distanceScale: p.val })}
+                        style={{
+                          padding: '4px 2px',
+                          fontSize: '9.5px',
+                          fontWeight: 700,
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: active ? 'rgba(56, 189, 248, 0.24)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${active ? '#38bdf8' : 'rgba(255,255,255,0.08)'}`,
+                          color: active ? '#ffffff' : '#94a3b8',
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Orbit Angle (Azimuth) Slider */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
+                  <span>Camera Angle (Orbit Offset)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#fb7185' }}>
+                    {shotFraming.azimuthDeg > 0 ? `+${shotFraming.azimuthDeg}°` : `${shotFraming.azimuthDeg ?? 0}°`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="5"
+                  value={shotFraming.azimuthDeg ?? 0}
+                  onChange={(e) =>
+                    onChangeShotFraming &&
+                    onChangeShotFraming({ azimuthDeg: parseFloat(e.target.value) })
+                  }
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', marginTop: '5px' }}>
+                  {[
+                    { label: '-90°', val: -90 },
+                    { label: '-45°', val: -45 },
+                    { label: '0°', val: 0 },
+                    { label: '+45°', val: 45 },
+                    { label: '180°', val: 180 },
+                  ].map((p) => {
+                    const active = Math.abs((shotFraming.azimuthDeg ?? 0) - p.val) < 2;
+                    return (
+                      <button
+                        key={p.label}
+                        onClick={() => onChangeShotFraming && onChangeShotFraming({ azimuthDeg: p.val })}
+                        style={{
+                          padding: '4px 2px',
+                          fontSize: '9.5px',
+                          fontWeight: 700,
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: active ? 'rgba(244, 63, 94, 0.24)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${active ? '#fb7185' : 'rgba(255,255,255,0.08)'}`,
+                          color: active ? '#ffffff' : '#94a3b8',
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Camera Height / Pitch Elevation Slider */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
+                  <span>Vertical Angle (Height / Tilt)</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#fbbf24' }}>
+                    {shotFraming.elevationDeg > 0 ? `+${shotFraming.elevationDeg}°` : `${shotFraming.elevationDeg ?? 0}°`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-25"
+                  max="55"
+                  step="1"
+                  value={shotFraming.elevationDeg ?? 0}
+                  onChange={(e) =>
+                    onChangeShotFraming &&
+                    onChangeShotFraming({ elevationDeg: parseFloat(e.target.value) })
+                  }
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '5px' }}>
+                  {[
+                    { label: 'Low -12°', val: -12 },
+                    { label: 'Std 0°', val: 0 },
+                    { label: 'High +20°', val: 20 },
+                    { label: 'Top +45°', val: 45 },
+                  ].map((p) => {
+                    const active = Math.abs((shotFraming.elevationDeg ?? 0) - p.val) < 2;
+                    return (
+                      <button
+                        key={p.label}
+                        onClick={() => onChangeShotFraming && onChangeShotFraming({ elevationDeg: p.val })}
+                        style={{
+                          padding: '4px 2px',
+                          fontSize: '9.5px',
+                          fontWeight: 700,
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: active ? 'rgba(245, 158, 11, 0.24)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${active ? '#fbbf24' : 'rgba(255,255,255,0.08)'}`,
+                          color: active ? '#fde68a' : '#94a3b8',
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Shot Speed Slider */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
+                  <span>Shot Motion Speed</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#a78bfa' }}>
+                    {(shotSpeed ?? 1.0).toFixed(2)}×
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.25"
+                  max="2.50"
+                  step="0.05"
+                  value={shotSpeed ?? 1.0}
+                  onChange={(e) => onChangeShotSpeed && onChangeShotSpeed(parseFloat(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
             <div>
               <div
                 style={{
@@ -2497,75 +2709,163 @@ export function StudioControlsDrawer({
                       borderRadius: '6px',
                       border: '1px solid var(--border-subtle)',
                       display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
+                      flexDirection: 'column',
+                      gap: '6px',
                     }}
                   >
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: 'var(--text-muted)',
-                        width: '18px',
-                      }}
-                    >
-                      #{idx + 1}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: 'var(--text-muted)',
+                          width: '18px',
+                        }}
+                      >
+                        #{idx + 1}
+                      </span>
 
-                    <select
-                      value={clip.shotId}
-                      onChange={(e) => handleClipChange(idx, 'shotId', e.target.value)}
-                      style={{
-                        flex: 1,
-                        background: 'rgba(0, 0, 0, 0.4)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '4px',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        padding: '4px 6px',
-                      }}
-                    >
-                      {availableShots.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
+                      <select
+                        value={clip.shotId}
+                        onChange={(e) => handleClipChange(idx, 'shotId', e.target.value)}
+                        style={{
+                          flex: 1,
+                          background: 'rgba(0, 0, 0, 0.4)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '4px',
+                          color: '#ffffff',
+                          fontSize: '11px',
+                          padding: '4px 6px',
+                        }}
+                      >
+                        {availableShots.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
 
-                    <input
-                      type="number"
-                      min="1"
-                      max="12"
-                      step="0.5"
-                      value={clip.duration}
-                      onChange={(e) =>
-                        handleClipChange(idx, 'duration', parseFloat(e.target.value))
-                      }
-                      style={{
-                        width: '52px',
-                        background: 'rgba(0, 0, 0, 0.4)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '4px',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        padding: '4px 6px',
-                        textAlign: 'center',
-                      }}
-                    />
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>s</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="12"
+                        step="0.5"
+                        value={clip.duration}
+                        onChange={(e) =>
+                          handleClipChange(idx, 'duration', parseFloat(e.target.value))
+                        }
+                        style={{
+                          width: '52px',
+                          background: 'rgba(0, 0, 0, 0.4)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '4px',
+                          color: '#ffffff',
+                          fontSize: '11px',
+                          padding: '4px 6px',
+                          textAlign: 'center',
+                        }}
+                      />
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>s</span>
 
-                    <button
-                      onClick={() => handleRemoveClip(idx)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: '2px',
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                      <button
+                        onClick={() => handleRemoveClip(idx)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: '2px',
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', paddingLeft: '26px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                        <span>Dist×</span>
+                        <input
+                          type="number"
+                          min="0.35"
+                          max="2.8"
+                          step="0.1"
+                          placeholder="global"
+                          value={clip.distanceScale ?? ''}
+                          onChange={(e) =>
+                            handleClipChange(
+                              idx,
+                              'distanceScale',
+                              e.target.value === '' ? undefined : parseFloat(e.target.value)
+                            )
+                          }
+                          style={{
+                            width: '100%',
+                            background: 'rgba(0, 0, 0, 0.35)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '4px',
+                            color: '#e2e8f0',
+                            fontSize: '10px',
+                            padding: '2px 4px',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                        <span>Angle°</span>
+                        <input
+                          type="number"
+                          min="-180"
+                          max="180"
+                          step="15"
+                          placeholder="global"
+                          value={clip.azimuthDeg ?? ''}
+                          onChange={(e) =>
+                            handleClipChange(
+                              idx,
+                              'azimuthDeg',
+                              e.target.value === '' ? undefined : parseFloat(e.target.value)
+                            )
+                          }
+                          style={{
+                            width: '100%',
+                            background: 'rgba(0, 0, 0, 0.35)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '4px',
+                            color: '#e2e8f0',
+                            fontSize: '10px',
+                            padding: '2px 4px',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                        <span>Tilt°</span>
+                        <input
+                          type="number"
+                          min="-25"
+                          max="55"
+                          step="5"
+                          placeholder="global"
+                          value={clip.elevationDeg ?? ''}
+                          onChange={(e) =>
+                            handleClipChange(
+                              idx,
+                              'elevationDeg',
+                              e.target.value === '' ? undefined : parseFloat(e.target.value)
+                            )
+                          }
+                          style={{
+                            width: '100%',
+                            background: 'rgba(0, 0, 0, 0.35)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '4px',
+                            color: '#e2e8f0',
+                            fontSize: '10px',
+                            padding: '2px 4px',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
                 ))}
               </div>

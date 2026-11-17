@@ -105,12 +105,6 @@ export default function App() {
     wheelSpin: true,
     aeroStreamlines: false,
     planeBanking: true,
-    planeContrails: true,
-    planeStrobes: true,
-    planeLandingGearRetracted: false,
-    planeLandingLights: true,
-    planeBeacons: true,
-    planeAfterburner: false,
   });
 
   const [autopilotEnabled, setAutopilotEnabled] = useState(false);
@@ -137,6 +131,11 @@ export default function App() {
   // Cinematography & Reel Sequencer
   const [activeShotId, setActiveShotId] = useState('free_orbit');
   const [shotSpeed, setShotSpeed] = useState(1.0);
+  const [shotFraming, setShotFraming] = useState({
+    distanceScale: 1.0,
+    azimuthDeg: 0,
+    elevationDeg: 0,
+  });
   const [cameraFov, setCameraFov] = useState(42);
   const [isPlayingSequence, setIsPlayingSequence] = useState(false);
   const [sequenceClips, setSequenceClips] = useState([
@@ -461,6 +460,20 @@ export default function App() {
     if (sceneManagerRef.current) {
       sceneManagerRef.current.cameraDirector.shotSpeed = val;
     }
+  };
+
+  const handleChangeShotFraming = (partial) => {
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.cameraDirector.setShotFraming(partial);
+    }
+    setShotFraming((prev) => ({ ...prev, ...partial }));
+  };
+
+  const handleResetShotFraming = () => {
+    if (sceneManagerRef.current) {
+      sceneManagerRef.current.cameraDirector.resetShotFraming();
+    }
+    setShotFraming({ distanceScale: 1.0, azimuthDeg: 0, elevationDeg: 0 });
   };
 
   const handleChangeCameraFov = (val) => {
@@ -896,13 +909,22 @@ export default function App() {
         onSelectShot={handleSelectShot}
         shotSpeed={shotSpeed}
         onChangeShotSpeed={handleChangeShotSpeed}
+        shotFraming={shotFraming}
+        onChangeShotFraming={handleChangeShotFraming}
+        onResetShotFraming={handleResetShotFraming}
+        subjectDistanceMeters={sceneManagerRef.current?.cameraDirector?.getCurrentSubjectDistance() || 0}
         cameraFov={cameraFov}
         onChangeCameraFov={handleChangeCameraFov}
         isPlayingSequence={isPlayingSequence}
         onStartSequence={handleStartSequence}
         onStopSequence={handleStopSequence}
         sequenceClips={sequenceClips}
-        onChangeSequenceClips={setSequenceClips}
+        onChangeSequenceClips={(nextClips) => {
+          setSequenceClips(nextClips);
+          if (sceneManagerRef.current) {
+            sceneManagerRef.current.cameraDirector.sequence = nextClips;
+          }
+        }}
         beatSyncEnabled={beatSyncEnabled}
       />
 
