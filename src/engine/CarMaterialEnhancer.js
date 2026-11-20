@@ -54,6 +54,109 @@ const BODY_TOKENS = new Set([
   'monocoque', 'fuselage', 'livery', 'skin',
 ]);
 
+// Body textures whose name marks them as a tint / instance mask (paint colour applied by the game engine).
+const TINT_MASK_NAME_RE = /(^|[^a-z])(inst|instance|tint|tintable|mask)([^a-z]|$)/i;
+const DEFAULT_FALLBACK_PAINT = '#8f9399';
+
+// Per-texture greyscale analysis cache so shared textures are only sampled once.
+const greyscaleCache = new WeakMap();
+
+/**
+ * True when a texture image is (almost) pure greyscale, i.e. an AO / tint mask that expects a paint
+ * colour multiplied on top. Returns false whenever the image cannot be inspected (no DOM, compressed,
+ * tainted) so a real livery is never recoloured by accident.
+ */
+export function isGreyscaleTexture(tex) {
+  if (!tex || !tex.image || tex.isCompressedTexture || tex.isDataTexture) return false;
+  if (greyscaleCache.has(tex)) return greyscaleCache.get(tex);
+  let result = false;
+  try {
+    if (typeof document !== 'undefined') {
+      const img = tex.image;
+      const iw = img.width || img.videoWidth;
+      const ih = img.height || img.videoHeight;
+      if (iw && ih) {
+        const S = 48;
+        const c = document.createElement('canvas');
+        c.width = S;
+        c.height = S;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, S, S);
+        const data = ctx.getImageData(0, 0, S, S).data;
+        let colourful = 0;
+        let counted = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 16) continue;
+          counted++;
+          const chroma = (Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2])) / 255;
+          if (chroma > 0.08) colourful++;
+        }
+        result = counted > 0 && colourful / counted < 0.015;
+      }
+    }
+  } catch (err) {
+    result = false;
+  }
+  greyscaleCache.set(tex, result);
+  return result;
+}
+
+/**
+ * GLTFLoader assigns one shared default MeshStandardMaterial (white, metalness 1, roughness 1, no
+ * name) to primitives that have no material. Under the bright studio IBL that renders as raw chrome.
+ */
+export function isGltfDefaultMaterial(mat) {
+  return Boolean(
+    mat &&
+      mat.isMeshStandardMaterial &&
+      !mat.isMeshPhysicalMaterial &&
+      !mat.name &&
+      !mat.map &&
+      mat.metalness === 1 &&
+      mat.roughness === 1 &&
+      mat.color &&
+      mat.color.r === 1 &&
+      mat.color.g === 1 &&
+      mat.color.b === 1
+  );
+}
+
+/**
+ * glTF base colour = baseColorFactor x baseColorTexture. Textured materials used to be forced to
+ * #ffffff, discarding the factor, so e.g. the AMG One / Charger Daytona black paint (factor ~0 over a
+ * white AO/flake texture) rendered white. Keep the factor as the tint.
+ */
+export function textureTint(mat) {
+  return mat && mat.color ? mat.color.clone() : new THREE.Color('#ffffff');
+}
+
+export function colorLuminance(col) {
+  return 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
+}
+
+/**
+ * Bright (white / silver) metallic paints mirror the white studio IBL and blow out to pure white.
+ * Real paint is a dielectric clearcoat over metallic flake, so cap the base metalness and IBL gain
+ * for light colours while leaving dark / saturated paints untouched.
+ */
+export function paintResponseFor(color, metalness) {
+  const lum = colorLuminance(color);
+  const srcMetal = metalness ?? 0.55;
+  const base = Math.min(Math.max(srcMetal, 0.35), 0.72);
+  if (lum > 0.45 && srcMetal >= 0.4) {
+    // Silver / chrome-like paint: pull albedo down to a mid silver so the white cyc doesn't flatten it.
+    return { metalness: Math.min(base, 0.6), roughness: 0.24, envMapIntensity: 0.8, colorScale: 0.22 / lum };
+  }
+  if (lum > 0.45) {
+    // Solid white paint: stay white but stop clearcoat + IBL from clipping it.
+    return { metalness: 0.08, roughness: 0.24, envMapIntensity: 0.85, colorScale: Math.min(1, 0.62 / lum) };
+  }
+  if (lum > 0.25) {
+    return { metalness: Math.min(base, 0.5), roughness: 0.2, envMapIntensity: 1.25, colorScale: 1 };
+  }
+  return { metalness: base, roughness: 0.16, envMapIntensity: 1.6, colorScale: 1 };
+}
+
 /**
  * CarMaterialEnhancer:
  * Upgrades vehicle and aircraft GLB materials into physically accurate clearcoated PBR shaders
@@ -78,6 +181,18 @@ export class CarMaterialEnhancer {
     this.headlightsActive = true;
     this.underglowActive = false; // Off by default for natural photorealism!
     this.underglowColor = '#00f5d4';
+
+    // Per-subject hints (e.g. catalog `paintColor`) used when a model ships without paint colour.
+    this.subjectHints = {};
+  }
+
+  /** Per-subject hints such as `{ paintColor: '#ff8000' }`, applied by the next enhance() call. */
+  setSubjectHints(hints = {}) {
+    this.subjectHints = hints || {};
+  }
+
+  _fallbackPaintColor() {
+    return new THREE.Color(this.subjectHints.paintColor || DEFAULT_FALLBACK_PAINT);
   }
 
   /**
@@ -103,11 +218,13 @@ export class CarMaterialEnhancer {
     if (src.normalScale && dst.normalScale) {
       dst.normalScale.copy(src.normalScale);
     }
-    if (src.map) {
+    if (src.map && src.map.colorSpace !== THREE.SRGBColorSpace) {
       src.map.colorSpace = THREE.SRGBColorSpace;
+      src.map.needsUpdate = true;
     }
-    if (src.emissiveMap) {
+    if (src.emissiveMap && src.emissiveMap.colorSpace !== THREE.SRGBColorSpace) {
       src.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+      src.emissiveMap.needsUpdate = true;
     }
     if (src.vertexColors) {
       dst.vertexColors = true;
@@ -119,11 +236,33 @@ export class CarMaterialEnhancer {
    * Scans and enhances every material in the loaded vehicle, aircraft, or part model.
    */
   enhance(rootGroup, mode = 'cars', bounds = { w: 2.1, h: 1.3, d: 4.8 }) {
+    // Re-entering an already enhanced (cached) subject: re-bind the stored material groups instead of
+    // upgrading the upgraded materials again (that leaked a new set of GPU materials on every car
+    // switch and dropped body-paint bindings because upgraded materials had no names).
+    const stored = rootGroup.userData?.carPaintEnhancerState;
+    if (stored) {
+      this.bodyMaterials = stored.bodyMaterials;
+      this.glassMaterials = stored.glassMaterials;
+      this.wheelMaterials = stored.wheelMaterials;
+      this.lightMaterials = stored.lightMaterials;
+      this.customPaintActive = false;
+      this.resetFactoryPaint();
+      this.setHeadlights(this.headlightsActive);
+      this.createContactShadow(rootGroup, bounds, mode);
+      this.createUnderglow(rootGroup, bounds, mode);
+      return;
+    }
+
     this.bodyMaterials = [];
     this.glassMaterials = [];
     this.wheelMaterials = [];
     this.lightMaterials = [];
     this.customPaintActive = false;
+
+    // One upgraded material per (source material, classification) instead of one per mesh.
+    // e.g. the Honda S2000 reuses one wheel material on 1,100+ meshes.
+    const upgradeMemo = new Map();
+    const replacedOriginals = new Set();
 
     rootGroup.traverse((child) => {
       if (!child.isMesh) return;
@@ -135,12 +274,10 @@ export class CarMaterialEnhancer {
       const parentName = (child.parent?.name || '').toLowerCase();
       const mats = Array.isArray(child.material) ? child.material : [child.material];
 
-      const upgradedMats = mats.map((mat) => {
-        const matName = (mat?.name || '').toLowerCase();
-        const combined = `${parentName} ${meshName} ${matName}`;
-
-        // Handle meshes exported with null material slots
-        if (!mat) {
+      const upgradeOne = (mat, combined) => {
+        // Handle meshes exported with null material slots, and primitives that GLTFLoader gave its
+        // shared white metalness=1 default material (no material in the GLB at all).
+        if (!mat || isGltfDefaultMaterial(mat)) {
           if (hasAnyToken(combined, GLASS_TOKENS) || hasSubstring(combined, LIGHT_GLASS_SUBS)) {
             const gm = new THREE.MeshPhysicalMaterial({
               color: new THREE.Color('#0f172a'),
@@ -194,21 +331,23 @@ export class CarMaterialEnhancer {
               clearcoatRoughness: 0.15,
             });
           }
-          const origCol = new THREE.Color('#cbd5e1');
+          const origCol = this._fallbackPaintColor();
+          const resp = paintResponseFor(origCol, 0.55);
+          origCol.multiplyScalar(resp.colorScale);
           const defaultBody = new THREE.MeshPhysicalMaterial({
             color: origCol.clone(),
-            roughness: 0.18,
-            metalness: 0.55,
+            roughness: resp.roughness,
+            metalness: resp.metalness,
             clearcoat: 1.0,
             clearcoatRoughness: 0.04,
-            envMapIntensity: 1.8,
+            envMapIntensity: resp.envMapIntensity,
           });
           this.bodyMaterials.push({
             origMat: null,
             origColor: origCol,
             origMap: null,
-            origMetalness: 0.55,
-            origRoughness: 0.18,
+            origMetalness: resp.metalness,
+            origRoughness: resp.roughness,
             hasLiveryTexture: false,
             paintMat: defaultBody,
           });
@@ -303,7 +442,7 @@ export class CarMaterialEnhancer {
             combined.includes('stop') ||
             combined.includes('red');
           const defaultCol = isRear ? new THREE.Color('#dc2626') : new THREE.Color('#f8fafc');
-          const baseCol = mat.map ? new THREE.Color('#ffffff') : (mat.color ? mat.color.clone() : defaultCol);
+          const baseCol = mat.map ? textureTint(mat) : (mat.color ? mat.color.clone() : defaultCol);
           const emitCol = mat.emissiveMap
             ? new THREE.Color('#ffffff')
             : isRear
@@ -341,7 +480,7 @@ export class CarMaterialEnhancer {
           combined.includes('splitter')
         ) {
           const carbonMat = new THREE.MeshPhysicalMaterial({
-            color: mat.map ? new THREE.Color('#ffffff') : new THREE.Color('#16191f'),
+            color: mat.map ? textureTint(mat) : new THREE.Color('#16191f'),
             roughness: mat.roughnessMap ? (mat.roughness ?? 0.24) : 0.22,
             metalness: 0.22,
             clearcoat: 0.85,
@@ -355,7 +494,7 @@ export class CarMaterialEnhancer {
         // 5. TIRES & RUBBER TREADS (preserve Toyo/Pirelli/Michelin sidewall textures!)
         if (hasAnyToken(combined, TIRE_TOKENS)) {
           const tireMat = new THREE.MeshStandardMaterial({
-            color: mat.map ? new THREE.Color('#ffffff') : new THREE.Color('#14161a'),
+            color: mat.map ? textureTint(mat) : new THREE.Color('#14161a'),
             roughness: mat.roughnessMap ? Math.max(0.65, mat.roughness ?? 0.85) : 0.84,
             metalness: 0.04,
             envMapIntensity: 0.55,
@@ -373,7 +512,7 @@ export class CarMaterialEnhancer {
           // If wheel has a texture map (often combined wheel + tire sidewall or center cap), preserve its map!
           if (mat.map) {
             const texRim = new THREE.MeshPhysicalMaterial({
-              color: new THREE.Color('#ffffff'),
+              color: textureTint(mat),
               metalness: mat.metalnessMap ? (mat.metalness ?? 0.6) : 0.45,
               roughness: mat.roughnessMap ? (mat.roughness ?? 0.28) : 0.26,
               clearcoat: 0.6,
@@ -416,22 +555,33 @@ export class CarMaterialEnhancer {
               combined.includes('kop_body')));
 
         if (isBodyCandidate) {
-          const hasLivery = Boolean(mat.map);
-          const origColor = hasLivery
-            ? new THREE.Color('#ffffff')
+          // Greyscale "instance"/tint masks (e.g. ACC exports' EXT_Carpaint_Inst) carry only AO/panel
+          // shading; the game multiplies a paint colour on top. Rendering them with #ffffff gave pure
+          // white cars, so tint them with the catalog paint colour instead.
+          const isTintMask =
+            Boolean(mode === 'cars' && mat.map) &&
+            (TINT_MASK_NAME_RE.test(mat.name || '') || Boolean(this.subjectHints.paintColor)) &&
+            isGreyscaleTexture(mat.map);
+          const hasLivery = Boolean(mat.map) && !isTintMask;
+          const origColor = isTintMask
+            ? this._fallbackPaintColor()
+            : hasLivery
+            ? textureTint(mat)
             : mat.color
             ? mat.color.clone()
             : new THREE.Color('#b91c1c');
+          const resp = paintResponseFor(origColor, mat.metalness);
+          if (!hasLivery) origColor.multiplyScalar(resp.colorScale);
 
           // CRITICAL FIX FOR LIVERIES & PAINT:
           // Textured racing liveries use dielectric basecoat (low metalness ~0.12) + 1.0 physical clearcoat
           // so 100% of diffuse colors, stripes, and sponsor logos render vividly instead of turning dark chrome!
           const origMetalness = hasLivery
             ? (mat.metalnessMap ? Math.min(mat.metalness ?? 0.35, 0.45) : 0.12)
-            : Math.min(Math.max(mat.metalness ?? 0.55, 0.35), 0.72);
+            : resp.metalness;
           const origRoughness = hasLivery
             ? (mat.roughnessMap ? Math.min(mat.roughness ?? 0.28, 0.38) : 0.18)
-            : 0.16;
+            : resp.roughness;
 
           const paintMat = new THREE.MeshPhysicalMaterial({
             color: origColor.clone(),
@@ -440,7 +590,7 @@ export class CarMaterialEnhancer {
             clearcoat: mode === 'planes' ? 0.75 : 1.0,
             clearcoatRoughness: mode === 'planes' ? 0.08 : 0.04,
             ior: 1.5,
-            envMapIntensity: mode === 'planes' ? 1.45 : 1.85,
+            envMapIntensity: mode === 'planes' ? 1.45 : hasLivery ? 1.5 : resp.envMapIntensity,
           });
           this._copyMaps(mat, paintMat);
 
@@ -468,10 +618,64 @@ export class CarMaterialEnhancer {
           mat.envMapIntensity = mode === 'planes' ? 1.35 : 1.55;
         }
         return mat;
+      };
+
+      const upgradedMats = mats.map((mat) => {
+        const matName = (mat?.name || '').toLowerCase();
+        const combined = `${parentName} ${meshName} ${matName}`;
+        if (!mat) return upgradeOne(mat, combined);
+        const signature = [
+          hasAnyToken(combined, DECAL_TOKENS),
+          hasAnyToken(combined, GLASS_TOKENS),
+          hasSubstring(combined, LIGHT_GLASS_SUBS),
+          hasAnyToken(combined, LIGHT_EMITTER_TOKENS),
+          hasAnyToken(combined, INTERIOR_TOKENS),
+          hasAnyToken(combined, CARBON_TOKENS),
+          /diffuser|splitter|plastic|grill|details/.test(combined),
+          hasAnyToken(combined, TIRE_TOKENS),
+          hasAnyToken(combined, RIM_TOKENS),
+          combined.includes('wheel') && !combined.includes('steering'),
+          /caliper|calliper/.test(combined),
+          /rear|tail|brake|stop|red|back/.test(combined),
+          hasAnyToken(combined, BODY_TOKENS),
+          /paint|shell|chass|template_icon|amr26|a525|r26|f40|gt3|kop_body/.test(combined),
+        ]
+          .map((b) => (b ? 1 : 0))
+          .join('');
+        const key = `${mat.uuid}|${signature}`;
+        if (upgradeMemo.has(key)) return upgradeMemo.get(key);
+        const out = upgradeOne(mat, combined);
+        if (out !== mat) {
+          if (!out.name) out.name = mat.name || '';
+          out.userData = { ...out.userData, carPaintEnhanced: true, sourceMaterialName: mat.name || '' };
+          replacedOriginals.add(mat);
+        }
+        upgradeMemo.set(key, out);
+        return out;
       });
 
       child.material = Array.isArray(child.material) ? upgradedMats : upgradedMats[0];
     });
+
+    // Free original materials that no mesh references any more (their textures were moved onto the
+    // upgraded materials, so only the material/program side is released here).
+    if (replacedOriginals.size) {
+      const stillUsed = new Set();
+      rootGroup.traverse((c) => {
+        if (!c.isMesh || !c.material) return;
+        (Array.isArray(c.material) ? c.material : [c.material]).forEach((m) => m && stillUsed.add(m));
+      });
+      replacedOriginals.forEach((m) => {
+        if (!stillUsed.has(m)) m.dispose();
+      });
+    }
+
+    rootGroup.userData.carPaintEnhancerState = {
+      bodyMaterials: this.bodyMaterials,
+      glassMaterials: this.glassMaterials,
+      wheelMaterials: this.wheelMaterials,
+      lightMaterials: this.lightMaterials,
+    };
 
     // Ground contact shadows + real directional shadow-catcher
     this.createContactShadow(rootGroup, bounds, mode);

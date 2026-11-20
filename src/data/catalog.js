@@ -267,6 +267,7 @@ export const CARS_CATALOG = [
     accent: '#f59e0b',
     targetSize: 4.66,
     modelRotation: [0, Math.PI, 0],
+    paintColor: '#ff7a00', // McLaren papaya over the greyscale EXT_Carpaint_Inst mask
     url: assetUrl('assets/Cars/2020-mclaren-720s-gt3/source/mclaren_720s_gt3_2.glb'),
     specs: 'M840T 4.0L Twin-Turbo V8 • MonoCage II',
   },
@@ -279,6 +280,7 @@ export const CARS_CATALOG = [
     accent: '#10b981',
     targetSize: 4.71,
     modelRotation: [0, Math.PI, 0],
+    paintColor: '#1f4fa3', // Lexus blue over the greyscale ext_carpaint_inst mask
     url: assetUrl('assets/Cars/2018-lexus-rc-f-gt3/source/lexus_rcf_gt3_acc_sprint.glb'),
     specs: '5.4L Naturally Aspirated V8 • 540 HP',
   },
@@ -337,6 +339,7 @@ export const CARS_CATALOG = [
     targetSize: 4.47,
     modelRotation: [-Math.PI / 2, Math.PI, 0],
     rotationOrder: 'YXZ',
+    paintColor: '#0d5c46', // GLB has no materials; Aston Martin Racing Green
     url: assetUrl('assets/Cars/2019-aston-martin-vantage/source/2019-aston-martin-vantage.glb'),
     specs: '4.0L Twin-Turbo V8 • 503 HP • ZF 8-Speed • Titanium Exhaust',
   },

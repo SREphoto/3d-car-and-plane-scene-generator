@@ -36,6 +36,8 @@ const LIVE_PROBE_PROCEDURAL_SCENES = new Set([
   'city_gp_circuit',
   'balloon_valley_circuit',
 ]);
+// Desktop keeps the active car plus the two most recent ones warm for instant switching.
+const DESKTOP_MAX_CACHED_SUBJECTS = 3;
 const CIRCUIT_TRACK_SCENES = new Set(['monaco_circuit', 'marina_bay_circuit']);
 
 const CIRCUIT_GLASS_RE = /glass|window|visor|water|flare|glow|smoke|shadow|skid|rubber|groove|light_beam|beam|halo_vis/i;
@@ -236,12 +238,15 @@ export class SceneManager {
   }
 
   /**
-   * Mobile GPU memory guard: GLB assets often embed 4K/8K textures (64-256 MB each once decoded).
-   * Downscale every texture image larger than MOBILE_MAX_TEX on the CPU before first GPU upload.
+   * GPU memory guard: GLB assets often embed 4K/8K textures (64-256 MB each once decoded, plus mips).
+   * Downscale every texture image larger than the device cap on the CPU before first GPU upload.
+   * Mobile caps at 1024px; desktop caps at 4096px (or the GPU max), which stops 8K bodies such as
+   * Eddie's Skyline R34 (8534px) from exhausting VRAM and triggering "WebGL Context Lost".
    */
-  _optimizeTexturesForMobile(root) {
-    if (!this.isMobile || !root) return;
-    const MOBILE_MAX_TEX = 1024;
+  _optimizeTextures(root) {
+    if (!root) return;
+    const gpuMax = this.renderer?.capabilities?.maxTextureSize || 4096;
+    const maxTex = this.isMobile ? 1024 : Math.min(4096, gpuMax);
     const seen = new Set();
     root.traverse((child) => {
       if (!child.isMesh || !child.material) return;
@@ -252,14 +257,14 @@ export class SceneManager {
           const tex = mat[key];
           if (!tex || !tex.isTexture || seen.has(tex)) continue;
           seen.add(tex);
-          tex.anisotropy = Math.min(tex.anisotropy || 1, 2);
+          if (this.isMobile) tex.anisotropy = Math.min(tex.anisotropy || 1, 2);
           const img = tex.image;
           const iw = img && (img.width || img.videoWidth);
           const ih = img && (img.height || img.videoHeight);
-          if (!iw || !ih || Math.max(iw, ih) <= MOBILE_MAX_TEX) continue;
+          if (!iw || !ih || Math.max(iw, ih) <= maxTex) continue;
           if (tex.isDataTexture || tex.isCompressedTexture) continue;
           try {
-            const s = MOBILE_MAX_TEX / Math.max(iw, ih);
+            const s = maxTex / Math.max(iw, ih);
             const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.round(iw * s));
             canvas.height = Math.max(1, Math.round(ih * s));
@@ -293,10 +298,15 @@ export class SceneManager {
     });
   }
 
-  /** On mobile keep only the active subject/location resident in memory. */
-  _evictMobileCache(cache, keepId, getRoot) {
-    if (!this.isMobile) return;
+  /**
+   * Keep at most `maxResident` cached subjects/locations in GPU memory (least recently used are
+   * removed and disposed). Mobile keeps only the active one. Previously desktop never evicted, so
+   * every car switch stacked another 50-600 MB of textures/geometry until the context was lost.
+   */
+  _evictSubjectCache(cache, keepId, getRoot, maxResident = this.isMobile ? 1 : Infinity) {
+    if (cache.size <= maxResident) return;
     for (const [id, entry] of cache) {
+      if (cache.size <= maxResident) break;
       if (id === keepId) continue;
       const root = getRoot(entry);
       if (root?.parent) root.parent.remove(root);
@@ -336,6 +346,9 @@ export class SceneManager {
 
       if (this.subjectCache.has(item.id)) {
         const cached = this.subjectCache.get(item.id);
+        // Refresh LRU order so the most recently shown subject is evicted last.
+        this.subjectCache.delete(item.id);
+        this.subjectCache.set(item.id, cached);
         rootGroup = cached.rootGroup;
         bounds = cached.bounds;
         // Re-bind enhancer references to cached rootGroup materials so paint/headlight controls apply to active vehicle
@@ -356,7 +369,7 @@ export class SceneManager {
         });
 
         const rawModel = gltf.scene;
-        this._optimizeTexturesForMobile(rawModel);
+        this._optimizeTextures(rawModel);
 
         // Strip stray backdrop/shadow-catcher floor planes, collision hulls, or hitboxes baked into Sketchfab exports
         rawModel.traverse((child) => {
@@ -473,13 +486,19 @@ export class SceneManager {
           d: scaledSize.z,
         };
 
+        this.enhancer.setSubjectHints({ paintColor: item.paintColor });
         this.enhancer.enhance(rootGroup, mode, bounds);
         this.subjectCache.set(item.id, { rootGroup, bounds });
       }
 
       if (token !== this.loadToken) return;
 
-      this._evictMobileCache(this.subjectCache, item.id, (e) => e.rootGroup);
+      this._evictSubjectCache(
+        this.subjectCache,
+        item.id,
+        (e) => e.rootGroup,
+        this.isMobile ? 1 : DESKTOP_MAX_CACHED_SUBJECTS
+      );
 
       while (this.subjectHolder.children.length > 0) {
         this.subjectHolder.remove(this.subjectHolder.children[0]);
@@ -578,7 +597,7 @@ export class SceneManager {
           });
 
           const rawLoc = gltf.scene;
-          this._optimizeTexturesForMobile(rawLoc);
+          this._optimizeTextures(rawLoc);
 
           if (sceneItem.id === 'wind_tunnel') {
             rawLoc.traverse((child) => {
@@ -957,7 +976,7 @@ export class SceneManager {
         }
 
         if (sToken === this.sceneLoadToken && this.activeSceneId === sceneItem.id) {
-          this._evictMobileCache(this.locationCache, sceneItem.id, (g) => g);
+          this._evictSubjectCache(this.locationCache, sceneItem.id, (g) => g);
           this.locationHolder.add(locGroup);
           locGroup.updateMatrixWorld(true);
 
