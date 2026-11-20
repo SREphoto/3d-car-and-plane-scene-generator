@@ -158,6 +158,28 @@ export function paintResponseFor(color, metalness) {
 }
 
 /**
+ * Optional per-car catalog overrides (paintMetalness, paintRoughness, paintClearcoat,
+ * paintClearcoatRoughness, paintEnvMapIntensity, paintColorScale). Unset fields leave
+ * the shared paintResponseFor result alone so other cars are unchanged.
+ */
+export function applyPaintHints(resp, hints = {}) {
+  const out = { ...resp };
+  if (typeof hints.paintMetalness === 'number') out.metalness = hints.paintMetalness;
+  if (typeof hints.paintRoughness === 'number') out.roughness = hints.paintRoughness;
+  if (typeof hints.paintEnvMapIntensity === 'number') out.envMapIntensity = hints.paintEnvMapIntensity;
+  if (typeof hints.paintColorScale === 'number') out.colorScale = hints.paintColorScale;
+  if (typeof hints.paintClearcoat === 'number') out.clearcoat = hints.paintClearcoat;
+  if (typeof hints.paintClearcoatRoughness === 'number') out.clearcoatRoughness = hints.paintClearcoatRoughness;
+  return out;
+}
+
+function isHintedBodyMaterial(combined, hints = {}) {
+  const names = hints.paintMaterialNames;
+  if (!Array.isArray(names) || !combined) return false;
+  return names.some((n) => n && combined.includes(String(n).toLowerCase()));
+}
+
+/**
  * CarMaterialEnhancer:
  * Upgrades vehicle and aircraft GLB materials into physically accurate clearcoated PBR shaders
  * while strictly preserving embedded racing liveries, sponsor decal alpha layers, tire/wheel maps,
@@ -332,14 +354,16 @@ export class CarMaterialEnhancer {
             });
           }
           const origCol = this._fallbackPaintColor();
-          const resp = paintResponseFor(origCol, 0.55);
+          const resp = applyPaintHints(paintResponseFor(origCol, 0.55), this.subjectHints);
           origCol.multiplyScalar(resp.colorScale);
+          const origClearcoat = resp.clearcoat ?? 1.0;
+          const origClearcoatRoughness = resp.clearcoatRoughness ?? 0.04;
           const defaultBody = new THREE.MeshPhysicalMaterial({
             color: origCol.clone(),
             roughness: resp.roughness,
             metalness: resp.metalness,
-            clearcoat: 1.0,
-            clearcoatRoughness: 0.04,
+            clearcoat: origClearcoat,
+            clearcoatRoughness: origClearcoatRoughness,
             envMapIntensity: resp.envMapIntensity,
           });
           this.bodyMaterials.push({
@@ -348,6 +372,9 @@ export class CarMaterialEnhancer {
             origMap: null,
             origMetalness: resp.metalness,
             origRoughness: resp.roughness,
+            origClearcoat,
+            origClearcoatRoughness,
+            origEnvMapIntensity: resp.envMapIntensity,
             hasLiveryTexture: false,
             paintMat: defaultBody,
           });
@@ -542,6 +569,7 @@ export class CarMaterialEnhancer {
         // 7. EXTERIOR AUTOMOTIVE / AIRCRAFT PAINT & RACING LIVERIES
         const isBodyCandidate =
           hasAnyToken(combined, BODY_TOKENS) ||
+          isHintedBodyMaterial(combined, this.subjectHints) ||
           (mode === 'cars' &&
             (combined.includes('paint') ||
               combined.includes('shell') ||
@@ -575,7 +603,7 @@ export class CarMaterialEnhancer {
             : mat.color
             ? mat.color.clone()
             : new THREE.Color('#b91c1c');
-          const resp = paintResponseFor(origColor, mat.metalness);
+          const resp = applyPaintHints(paintResponseFor(origColor, mat.metalness), this.subjectHints);
           if (!hasLivery) origColor.multiplyScalar(resp.colorScale);
 
           // CRITICAL FIX FOR LIVERIES & PAINT:
@@ -587,15 +615,18 @@ export class CarMaterialEnhancer {
           const origRoughness = hasLivery
             ? (mat.roughnessMap ? Math.min(mat.roughness ?? 0.28, 0.38) : 0.18)
             : resp.roughness;
+          const origClearcoat = resp.clearcoat ?? (mode === 'planes' ? 0.75 : 1.0);
+          const origClearcoatRoughness = resp.clearcoatRoughness ?? (mode === 'planes' ? 0.08 : 0.04);
+          const origEnvMapIntensity = mode === 'planes' ? 1.45 : hasLivery ? 1.5 : resp.envMapIntensity;
 
           const paintMat = new THREE.MeshPhysicalMaterial({
             color: origColor.clone(),
             metalness: origMetalness,
             roughness: origRoughness,
-            clearcoat: mode === 'planes' ? 0.75 : 1.0,
-            clearcoatRoughness: mode === 'planes' ? 0.08 : 0.04,
+            clearcoat: origClearcoat,
+            clearcoatRoughness: origClearcoatRoughness,
             ior: 1.5,
-            envMapIntensity: mode === 'planes' ? 1.45 : hasLivery ? 1.5 : resp.envMapIntensity,
+            envMapIntensity: origEnvMapIntensity,
           });
           this._copyMaps(mat, paintMat);
 
@@ -605,6 +636,9 @@ export class CarMaterialEnhancer {
             origMap: mat.map || null,
             origMetalness,
             origRoughness,
+            origClearcoat,
+            origClearcoatRoughness,
+            origEnvMapIntensity,
             hasLiveryTexture: hasLivery,
             paintMat,
           });
@@ -643,6 +677,7 @@ export class CarMaterialEnhancer {
           /caliper|calliper/.test(combined),
           /rear|tail|brake|stop|red|back/.test(combined),
           hasAnyToken(combined, BODY_TOKENS),
+          isHintedBodyMaterial(combined, this.subjectHints),
           /paint|shell|chass|template_icon|amr26|a525|r26|f40|gt3|kop_body/.test(combined),
         ]
           .map((b) => (b ? 1 : 0))
@@ -853,13 +888,14 @@ export class CarMaterialEnhancer {
    */
   resetFactoryPaint() {
     this.customPaintActive = false;
-    this.bodyMaterials.forEach(({ origColor, origMap, origMetalness, origRoughness, paintMat }) => {
+    this.bodyMaterials.forEach(({ origColor, origMap, origMetalness, origRoughness, origClearcoat, origClearcoatRoughness, origEnvMapIntensity, paintMat }) => {
       paintMat.color.copy(origColor);
       paintMat.map = origMap;
       paintMat.metalness = origMetalness;
       paintMat.roughness = origRoughness;
-      paintMat.clearcoat = 1.0;
-      paintMat.clearcoatRoughness = 0.04;
+      paintMat.clearcoat = origClearcoat ?? 1.0;
+      paintMat.clearcoatRoughness = origClearcoatRoughness ?? 0.04;
+      if (origEnvMapIntensity != null) paintMat.envMapIntensity = origEnvMapIntensity;
       paintMat.needsUpdate = true;
     });
   }

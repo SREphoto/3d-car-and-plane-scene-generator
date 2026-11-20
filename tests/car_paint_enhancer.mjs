@@ -35,6 +35,7 @@ const {
   CarMaterialEnhancer,
   isGltfDefaultMaterial,
   paintResponseFor,
+  applyPaintHints,
   colorLuminance,
 } = await import('../src/engine/CarMaterialEnhancer.js');
 
@@ -174,6 +175,88 @@ console.log('CarMaterialEnhancer paint checks');
   );
   check('untextured white CarPaint stays untextured', !m.material.map);
   check('untextured white CarPaint is bound to paint controls', enh.bodyMaterials.length === 1);
+}
+
+// 6. Per-car catalog paint hints (AMG ONE gloss / Carrera GT brightness) do not change other cars
+{
+  const baseBlack = paintResponseFor(new THREE.Color('#0a0a0c'), 0.55);
+  const amg = applyPaintHints(baseBlack, {
+    paintMetalness: 0.08,
+    paintRoughness: 0.36,
+    paintClearcoat: 0.28,
+    paintClearcoatRoughness: 0.24,
+    paintEnvMapIntensity: 0.4,
+  });
+  check('AMG hint lowers metalness vs default dark paint', amg.metalness === 0.08 && baseBlack.metalness > 0.3);
+  check('AMG hint raises roughness vs default dark paint', amg.roughness === 0.36 && baseBlack.roughness < 0.2);
+  check('AMG hint lowers clearcoat', amg.clearcoat === 0.28);
+  check('untouched dark paint response stays unchanged', baseBlack.clearcoat == null && baseBlack.envMapIntensity === 1.6);
+
+  const silver = paintResponseFor(new THREE.Color(0.86, 0.88, 0.91), 0.72);
+  const carrera = applyPaintHints(silver, {
+    paintMetalness: 0.55,
+    paintRoughness: 0.28,
+    paintEnvMapIntensity: 0.38,
+    paintColorScale: 0.45,
+  });
+  check('Carrera hint lowers IBL vs shared silver path', carrera.envMapIntensity === 0.38 && silver.envMapIntensity === 0.8);
+  check('Carrera hint overrides albedo scale absolutely', carrera.colorScale === 0.45);
+  check('shared silver path is unchanged without hints', silver.envMapIntensity === 0.8 && silver.metalness <= 0.6);
+
+  const root = new THREE.Group();
+  const src = new THREE.MeshStandardMaterial({
+    name: 'AMGMAT_CarPaint_Metallic_White_074',
+    color: 0xffffff,
+    metalness: 0,
+    roughness: 0.3,
+  });
+  const m = new THREE.Mesh(geo, src);
+  m.name = 'AMG:SM_Base_0000_001_MAT_CarPaint_Metallic';
+  root.add(m);
+  const enh = new CarMaterialEnhancer();
+  enh.setSubjectHints({
+    paintColor: '#0a0a0c',
+    paintMetalness: 0.08,
+    paintRoughness: 0.36,
+    paintClearcoat: 0.28,
+    paintClearcoatRoughness: 0.24,
+    paintEnvMapIntensity: 0.4,
+  });
+  enh.enhance(root, 'cars', bounds);
+  check('AMG catalog hints applied to body material', m.material.metalness === 0.08 && m.material.roughness === 0.36);
+  check('AMG catalog hints applied to clearcoat', m.material.clearcoat === 0.28 && m.material.clearcoatRoughness === 0.24);
+  check('AMG catalog hints applied to IBL gain', m.material.envMapIntensity === 0.4);
+  enh.resetFactoryPaint();
+  check('factory reset keeps AMG clearcoat hints', m.material.clearcoat === 0.28 && m.material.envMapIntensity === 0.4);
+}
+
+// 7. Catalog paintMaterialNames can opt a uniquely named shell into body paint
+{
+  const root = new THREE.Group();
+  const src = new THREE.MeshStandardMaterial({
+    name: 'Porsche_Carrera_GT_Concept_2000_Replica_By_Alex_Ka_2',
+    color: 0xbcbcbc,
+    metalness: 1,
+    roughness: 0.35,
+  });
+  const m = new THREE.Mesh(geo, src);
+  m.name = 'Object_6001';
+  root.add(m);
+  const enh = new CarMaterialEnhancer();
+  enh.setSubjectHints({
+    paintMaterialNames: ['porsche_carrera_gt_concept_2000_replica'],
+    paintMetalness: 0.55,
+    paintRoughness: 0.28,
+    paintClearcoat: 0.55,
+    paintClearcoatRoughness: 0.14,
+    paintEnvMapIntensity: 0.38,
+    paintColorScale: 0.45,
+  });
+  enh.enhance(root, 'cars', bounds);
+  check('hinted Carrera shell is bound as body paint', enh.bodyMaterials.length === 1);
+  check('hinted Carrera shell is no longer metalness 1', m.material.metalness === 0.55, `metalness=${m.material.metalness}`);
+  check('hinted Carrera shell uses lower IBL gain', m.material.envMapIntensity === 0.38);
+  check('hinted Carrera shell albedo is scaled', m.material.color.getHexString() < 'bcbcbc', `#${m.material.color.getHexString()}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

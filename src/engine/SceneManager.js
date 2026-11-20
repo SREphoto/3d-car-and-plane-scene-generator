@@ -486,7 +486,16 @@ export class SceneManager {
           d: scaledSize.z,
         };
 
-        this.enhancer.setSubjectHints({ paintColor: item.paintColor });
+        this.enhancer.setSubjectHints({
+          paintColor: item.paintColor,
+          paintMetalness: item.paintMetalness,
+          paintRoughness: item.paintRoughness,
+          paintClearcoat: item.paintClearcoat,
+          paintClearcoatRoughness: item.paintClearcoatRoughness,
+          paintEnvMapIntensity: item.paintEnvMapIntensity,
+          paintColorScale: item.paintColorScale,
+          paintMaterialNames: item.paintMaterialNames,
+        });
         this.enhancer.enhance(rootGroup, mode, bounds);
         this.subjectCache.set(item.id, { rootGroup, bounds });
       }
