@@ -604,6 +604,7 @@ export const CARS_CATALOG = [
     category: 'Hypercar',
     year: 2023,
     accent: '#14b8a6',
+    paintColor: '#0a0a0c', // Obsidian black; the GLB's main shell is authored as CarPaint_Metallic_White
     targetSize: 4.76,
     url: assetUrl('assets/Cars/2023-mercedes-amg-one/mercedes_amg_one_2023.glb'),
     specs: '1.6L F1 E-Turbo V6 Hybrid + 4 E-Motors • 1,063 PS • Active Louvers & DRS Wing',

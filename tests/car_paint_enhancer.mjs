@@ -151,5 +151,31 @@ console.log('CarMaterialEnhancer paint checks');
   check('factory reset restores factor tint + map', m.material.color.getHex() === 0x000000 && m.material.map === tex);
 }
 
+
+// 5. Untextured white CarPaint (AMG One main shell) uses catalog paintColor
+{
+  const root = new THREE.Group();
+  const src = new THREE.MeshStandardMaterial({
+    name: 'AMGMAT_CarPaint_Metallic_White_074',
+    color: 0xffffff,
+    metalness: 0,
+    roughness: 0.3,
+  });
+  const m = new THREE.Mesh(geo, src);
+  m.name = 'AMG:SM_Base_0000_001_MAT_CarPaint_Metallic';
+  root.add(m);
+  const enh = new CarMaterialEnhancer();
+  enh.setSubjectHints({ paintColor: '#0a0a0c' });
+  enh.enhance(root, 'cars', bounds);
+  check(
+    'untextured white CarPaint uses catalog paintColor',
+    m.material.color.getHexString() === new THREE.Color('#0a0a0c').getHexString(),
+    `#${m.material.color.getHexString()}`
+  );
+  check('untextured white CarPaint stays untextured', !m.material.map);
+  check('untextured white CarPaint is bound to paint controls', enh.bodyMaterials.length === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
+
 process.exit(failed ? 1 : 0);

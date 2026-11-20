@@ -563,10 +563,15 @@ export class CarMaterialEnhancer {
             (TINT_MASK_NAME_RE.test(mat.name || '') || Boolean(this.subjectHints.paintColor)) &&
             isGreyscaleTexture(mat.map);
           const hasLivery = Boolean(mat.map) && !isTintMask;
+          // Untextured body paint (the AMG One shell is literally CarPaint_Metallic_White with no
+          // factor) should take the catalog paint colour when one is provided, rather than staying
+          // at the glTF default of white.
           const origColor = isTintMask
             ? this._fallbackPaintColor()
             : hasLivery
             ? textureTint(mat)
+            : this.subjectHints.paintColor
+            ? this._fallbackPaintColor()
             : mat.color
             ? mat.color.clone()
             : new THREE.Color('#b91c1c');
