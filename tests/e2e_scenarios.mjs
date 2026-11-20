@@ -44,6 +44,16 @@ export function getSceneManagerCameraLimits() {
 }
 
 export function simulateBoundingNormalization(bbox, targetSpan) {
+  // A GLB whose accessors carry no min/max yields no bounding box; report it as a failed check
+  // instead of crashing the whole runner.
+  if (!bbox || !bbox.min || !bbox.max) {
+    return {
+      scale: NaN,
+      offsetY: NaN,
+      dimensions: { x: 0, y: 0, z: 0 },
+      finalBbox: { min: [0, NaN, 0], max: [0, NaN, 0] },
+    };
+  }
   const dx = bbox.max[0] - bbox.min[0];
   const dy = bbox.max[1] - bbox.min[1];
   const dz = bbox.max[2] - bbox.min[2];
